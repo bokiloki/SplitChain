@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "splitchain"
+version = "0.1.0"
+description = "Experimental SplitChain protocol model, simulator, node, and CLI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+dependencies = ["websockets>=12,<16"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+scplit = "splitchain.cli:main"
+splitd = "splitchain.node:main"
+
+[tool.setuptools.packages.find]
+include = ["splitchain*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
