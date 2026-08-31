@@ -7,12 +7,14 @@ import asyncio
 import json
 from typing import Any
 
+from .ecosystem import Ecosystem
 from .model import Ledger, ProtocolError
 
 
 class ReferenceNode:
     def __init__(self, balances: dict[str, int] | None = None) -> None:
         self.ledger = Ledger(balances or {"alice": 1_000, "bob": 1_000})
+        self.ecosystem = Ecosystem()
         self._lock = asyncio.Lock()
 
     async def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -23,6 +25,8 @@ class ReferenceNode:
             async with self._lock:
                 if method == "status":
                     result = self.ledger.snapshot()
+                elif method == "ecosystem.demo":
+                    result = self.ecosystem.demo()
                 elif method == "offer":
                     result = self.ledger.offer(**params).public()
                 elif method == "accept":

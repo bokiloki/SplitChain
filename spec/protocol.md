@@ -33,7 +33,8 @@ authentication and must bind to loopback by default.
 
 ## 4. Open proposals (not implemented)
 
-- TrueLies/OLC-PST observer selection and rotating triplets.
+- Production TrueLies/OLC-PST observer selection and rotating triplets. The local ecosystem only
+  implements deterministic HMAC attestations from three configured observers with a 2/3 quorum.
 - At least three Overlords with 2/3 acknowledgements.
 - Commit-reveal timing targets, previous-winner window application, and Secondary takeover.
 - Failure proofs, counterproof locks, slashing, reserve-pool rewards, and reputation aging.
@@ -43,4 +44,3 @@ authentication and must bind to loopback by default.
 
 Each proposal requires an RFC, ADR, simulator experiment, adversarial analysis, and formal-model
 change before promotion into the confirmed specification.
-

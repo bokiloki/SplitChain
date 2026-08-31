@@ -8,6 +8,7 @@ import json
 import uuid
 from dataclasses import asdict
 
+from .ecosystem import Ecosystem
 from .simulator import run
 
 
@@ -30,13 +31,20 @@ def main() -> None:
     sim.add_argument("--accounts", type=int, default=8)
 
     call = sub.add_parser("rpc", help="call a local splitd node")
-    call.add_argument("method", choices=("status", "offer", "accept", "commit", "cancel", "advance"))
+    call.add_argument(
+        "method",
+        choices=("status", "offer", "accept", "commit", "cancel", "advance", "ecosystem.demo"),
+    )
     call.add_argument("--params", default="{}", help="JSON object")
     call.add_argument("--url", default="ws://127.0.0.1:8765")
+
+    sub.add_parser("ecosystem-demo", help="run an in-process application-to-node demonstration")
 
     args = parser.parse_args()
     if args.command == "simulate":
         print(json.dumps(asdict(run(args.seed, args.steps, args.accounts)), indent=2))
+    elif args.command == "ecosystem-demo":
+        print(json.dumps(Ecosystem().demo(), indent=2))
     else:
         params = json.loads(args.params)
         if not isinstance(params, dict):
@@ -46,4 +54,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

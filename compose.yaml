@@ -1,0 +1,25 @@
+services:
+  primary:
+    build: .
+    command: ["--host", "0.0.0.0", "--port", "8765"]
+    ports: ["8765:8765"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+  secondary:
+    build: .
+    command: ["--host", "0.0.0.0", "--port", "8765"]
+    ports: ["8766:8765"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+  tertiary:
+    build: .
+    command: ["--host", "0.0.0.0", "--port", "8765"]
+    ports: ["8767:8765"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
