@@ -75,6 +75,10 @@ Terminal 1:
 splitd --host 127.0.0.1 --port 8765
 ```
 
+To persist ledger state across restarts, add `--state ./data/ledger.json`.
+Successful mutations atomically replace the state file; restart validates locked
+funds, equal stake, and canonical branch origins before accepting the snapshot.
+
 Terminal 2:
 
 ```bash
@@ -82,7 +86,11 @@ scplit rpc status
 scplit rpc offer --params '{"sender":"alice","receiver":"bob","value":10}'
 ```
 
-`splitd` is intentionally a research reference node and is unauthenticated. Keep it bound to loopback unless you are working in an isolated test environment.
+`splitd` remains a research reference node. Optional HMAC request authentication
+is available through `ReferenceNode(auth_secrets=...)` for controlled experiments,
+with actor binding and process-local nonce replay rejection. This is not production
+identity, persistent replay protection, or key management; keep the server on loopback
+unless you are working in an isolated test environment.
 
 ## 6. Run the three-node Docker environment
 
