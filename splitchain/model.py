@@ -175,6 +175,7 @@ class Ledger:
 
     def snapshot(self) -> dict:
         return {
+            "schema": "splitchain-ledger/v1",
             "round": self.round,
             "canonical_head": {
                 "height": self.canonical_height,
@@ -184,7 +185,64 @@ class Ledger:
             "locked": dict(sorted(self.locked.items())),
             "branches": [b.public() for b in self.branches.values()],
             "finalized": list(self.finalized),
+            "canonical_history": {
+                str(height): digest for height, digest in sorted(self.canonical_history.items())
+            },
         }
+
+    @classmethod
+    def from_snapshot(cls, snapshot: dict) -> Ledger:
+        """Restore a ledger while rechecking invariants at the trust boundary."""
+
+        if snapshot.get("schema") != "splitchain-ledger/v1":
+            raise ProtocolError("unsupported ledger snapshot schema")
+        ledger = cls(snapshot.get("balances"))
+        try:
+            ledger.round = int(snapshot["round"])
+            head = snapshot["canonical_head"]
+            ledger.canonical_height = int(head["height"])
+            ledger.canonical_digest = str(head["digest"])
+            ledger.locked = {str(k): int(v) for k, v in snapshot["locked"].items()}
+            ledger.finalized = list(snapshot["finalized"])
+            ledger.canonical_history = {
+                int(height): str(digest)
+                for height, digest in snapshot["canonical_history"].items()
+            }
+            ledger.branches = {}
+            for raw in snapshot["branches"]:
+                data = dict(raw)
+                data["state"] = BranchState(data["state"])
+                branch = Branch(**data)
+                ledger.branches[branch.branch_id] = branch
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ProtocolError("invalid ledger snapshot") from exc
+        ledger._validate_restored_state()
+        return ledger
+
+    def _validate_restored_state(self) -> None:
+        if self.round < 0 or self.canonical_height < 0:
+            raise ProtocolError("negative snapshot counter")
+        if self.canonical_history.get(self.canonical_height) != self.canonical_digest:
+            raise ProtocolError("canonical head is not present in history")
+        if any(value < 0 for value in self.balances.values()):
+            raise ProtocolError("snapshot contains a negative balance")
+        expected_locked: dict[str, int] = {}
+        active = {BranchState.OFFERED, BranchState.ACCEPTED, BranchState.COMMITTED}
+        for branch in self.branches.values():
+            if branch.value <= 0 or branch.stake != branch.value:
+                raise ProtocolError("snapshot violates equal branch stake")
+            if self.canonical_history.get(branch.origin_height) != branch.origin_digest:
+                raise ProtocolError("branch origin is not canonical")
+            if branch.state in active:
+                expected_locked[branch.sender] = (
+                    expected_locked.get(branch.sender, 0) + branch.value + branch.stake
+                )
+        actual_locked = {key: value for key, value in self.locked.items() if value}
+        if expected_locked != actual_locked:
+            raise ProtocolError("snapshot locked funds do not match active branches")
+        for account in set(self.balances) | set(self.locked):
+            if self.available(account) < 0:
+                raise ProtocolError("snapshot over-locks an account")
 
     def _branch(self, branch_id: str, *states: BranchState) -> Branch:
         try:
