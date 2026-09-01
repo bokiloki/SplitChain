@@ -89,6 +89,7 @@ and caps the three nodes at a combined 1.5 CPUs and 768 MiB of memory.
 - Atomic reference-node state persistence and invariant-checked restart recovery.
 - Persistent replay nonces across authenticated node restarts.
 - Deterministic three-node branch-scoped gossip with certificate, signature and sequence checks.
+- Connected three-node Compose topology with bounded peer probes and `cluster.status`.
 - Certified Primary/Secondary/Tertiary acknowledgements with 2/3 quorum across three rounds.
 - Proof-gated Primary → Secondary → Tertiary recovery with a three-round counterproof window.
 - `scplit` CLI for simulation, RPC and ecosystem demo.

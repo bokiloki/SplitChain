@@ -137,6 +137,16 @@ Try the ecosystem RPC:
 scplit rpc ecosystem.demo --url ws://127.0.0.1:8765
 ```
 
+Verify that the primary can reach both other containers:
+
+```bash
+scplit rpc cluster.status --url ws://127.0.0.1:8765
+```
+
+The response reports the primary ledger and an `available` or `unavailable` result for
+the Secondary and Tertiary nodes. Peer probes have a three-second timeout and partial
+failure does not block results from healthy nodes.
+
 Stop the environment with:
 
 ```bash

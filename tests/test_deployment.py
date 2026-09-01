@@ -12,6 +12,8 @@ def test_compose_is_bounded_local_and_persistent():
     assert compose.count("healthcheck:") == 3
     assert compose.count("restart: unless-stopped") == 3
     assert compose.count("/var/lib/splitchain/ledger.json") == 3
+    assert compose.count('"--node-id"') == 3
+    assert compose.count('"--peer"') == 6
 
 
 def test_container_runs_unprivileged_with_writable_state_directory():

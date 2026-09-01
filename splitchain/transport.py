@@ -23,6 +23,7 @@ class PeerIdentity:
     METHOD_ROLES: ClassVar[dict[str, frozenset[str]]] = {
         "status": ALLOWED_PEER_ROLES,
         "ecosystem.demo": ALLOWED_PEER_ROLES,
+        "cluster.status": ALLOWED_PEER_ROLES,
         "offer": frozenset({"client"}),
         "accept": frozenset({"client"}),
         "commit": frozenset({"client"}),
