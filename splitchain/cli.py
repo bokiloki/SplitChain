@@ -10,13 +10,20 @@ from dataclasses import asdict
 
 from .ecosystem import Ecosystem
 from .simulator import run
+from .transport import TLSMaterial
 
 
-async def rpc(url: str, method: str, params: dict) -> dict:
+async def rpc(
+    url: str,
+    method: str,
+    params: dict,
+    tls: TLSMaterial | None = None,
+) -> dict:
     import websockets
 
     request = {"id": uuid.uuid4().hex[:8], "method": method, "params": params}
-    async with websockets.connect(url, max_size=64 * 1024) as socket:
+    ssl_context = tls.client_context() if tls else None
+    async with websockets.connect(url, max_size=64 * 1024, ssl=ssl_context) as socket:
         await socket.send(json.dumps(request))
         return json.loads(await socket.recv())
 
@@ -37,6 +44,9 @@ def main() -> None:
     )
     call.add_argument("--params", default="{}", help="JSON object")
     call.add_argument("--url", default="ws://127.0.0.1:8765")
+    call.add_argument("--tls-cert", help="PEM client certificate")
+    call.add_argument("--tls-key", help="PEM client private key")
+    call.add_argument("--tls-ca", help="PEM certificate authority used to verify the server")
 
     sub.add_parser("ecosystem-demo", help="run an in-process application-to-node demonstration")
 
@@ -49,7 +59,8 @@ def main() -> None:
         params = json.loads(args.params)
         if not isinstance(params, dict):
             parser.error("--params must be a JSON object")
-        print(json.dumps(asyncio.run(rpc(args.url, args.method, params)), indent=2))
+        tls = TLSMaterial.from_values(args.tls_cert, args.tls_key, args.tls_ca)
+        print(json.dumps(asyncio.run(rpc(args.url, args.method, params, tls)), indent=2))
 
 
 if __name__ == "__main__":
