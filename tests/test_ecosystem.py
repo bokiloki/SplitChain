@@ -10,6 +10,8 @@ def test_full_ecosystem_vertical_slice():
     assert result["application"]["status"] == "completed"
     assert result["distops"]["sandbox"]["network"] == "deny"
     assert result["truelies"]["quorum"] is True
+    assert result["finality"]["finalized"] is True
+    assert result["finality"]["votes"]["3"] == ["primary", "secondary"]
     assert result["protocol"]["balances"] == {"alice": 990, "bob": 1010}
     assert len(result["nodes"]) == 3
 
@@ -27,4 +29,3 @@ def test_untrusted_node_only_accepts_low_risk_work():
     assert distops.schedule(low)["status"] == "completed"
     with pytest.raises(ValueError):
         distops.schedule(Workload("splitchain/hash:0.1", ("hash",), risk=Risk.HIGH))
-
