@@ -67,6 +67,10 @@ docker compose up --build
 scplit rpc ecosystem.demo --url ws://127.0.0.1:8765
 ```
 
+The lightweight Compose profile needs no Kubernetes cluster. It binds all node ports to
+loopback, persists each ledger independently, includes health checks and restart policy,
+and caps the three nodes at a combined 1.5 CPUs and 768 MiB of memory.
+
 `splitd` is intentionally unauthenticated and defaults to loopback. Do not expose the reference implementation directly to untrusted networks.
 
 ## What works now
@@ -90,6 +94,8 @@ scplit rpc ecosystem.demo --url ws://127.0.0.1:8765
   ephemeral-secret metadata, and deterministic completion proofs.
 - Opt-in Docker/containerd runtime adapter with immutable images, attestation checks,
   shell-free argv construction, isolation validation, and runtime-result proofs.
+- Replay-resistant runtime attestations, trusted egress gateways that block consensus
+  endpoints, and one-time expiring ephemeral-secret leases.
 - SplitChain Services request lifecycle.
 - Local TrueLies three-observer 2/3 proof quorum and reputation counter.
 - TLA+ safety-core model and TLC configuration.

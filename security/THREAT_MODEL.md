@@ -33,6 +33,9 @@ consensus, hardware-backed keys, revocation infrastructure, or production key ma
 DistOPS receipts describe required enforcement but do not themselves launch or attest a real
 container/microVM runtime. The opt-in runtime adapter validates deny-only container execution and
 attested controls, but production daemon hardening and independent remote attestation remain open.
+The research adapter now rejects attestation-nonce replay, restricts allowlisted traffic to a
+trusted high-reputation egress gateway, blocks consensus endpoint names, and models one-time
+expiring secret leases whose in-memory buffers are cleared after consumption.
 
 ## Known critical gaps
 
