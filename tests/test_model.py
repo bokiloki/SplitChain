@@ -74,3 +74,23 @@ def test_non_finite_json_commit_is_rejected():
 
     with pytest.raises(ProtocolError, match="canonical JSON"):
         ledger.commit(branch.branch_id, "alice", {"invalid": float("nan")})
+
+
+def test_snapshot_round_trip_preserves_committed_branch():
+    ledger = Ledger({"alice": 100, "bob": 0})
+    branch = ledger.offer("alice", "bob", 10)
+    ledger.accept(branch.branch_id, "bob")
+    ledger.commit(branch.branch_id, "alice", {"payment": 10})
+    restored = Ledger.from_snapshot(ledger.snapshot())
+    assert restored.snapshot() == ledger.snapshot()
+    restored.advance(3)
+    assert restored.balances == {"alice": 90, "bob": 10}
+
+
+def test_snapshot_rejects_locked_fund_tampering():
+    ledger = Ledger({"alice": 100})
+    ledger.offer("alice", "bob", 10)
+    snapshot = ledger.snapshot()
+    snapshot["locked"]["alice"] = 1
+    with pytest.raises(ProtocolError, match="locked funds"):
+        Ledger.from_snapshot(snapshot)
