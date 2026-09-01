@@ -4,7 +4,7 @@ SplitChain is an **experimental protocol and distributed-computing research ecos
 
 > **Status:** experimental and unaudited. The repository is a working research baseline, not a production blockchain and not suitable for real assets.
 
-![SplitChain ecosystem architecture](docs/images/gallery/splitchain-ecosystem-architecture.png)
+<p align="center"><img src="docs/images/gallery/splitchain-ecosystem-architecture.png" alt="SplitChain ecosystem architecture" width="100%"></p>
 
 ## Ecosystem
 
@@ -96,43 +96,43 @@ documentation, not proof that every mechanism is already implemented.
 
 ### DistOPS execution and trust modes
 
-![DistOPS operating modes](docs/images/gallery/DistOPSModes.png)
+<p align="center"><img src="docs/images/gallery/DistOPSModes.png" alt="DistOPS operating modes" width="100%"></p>
 
 ### Node roles and network boundaries
 
-![SplitChain node and network architecture](docs/images/gallery/splitchain-node-network-architecture.png)
+<p align="center"><img src="docs/images/gallery/splitchain-node-network-architecture.png" alt="SplitChain node and network architecture" width="100%"></p>
 
 ### Signed protocol messages
 
-![SplitChain signed protocol message flow](docs/images/gallery/splitchain-signed-protocol-message-flow.png)
+<p align="center"><img src="docs/images/gallery/splitchain-signed-protocol-message-flow.png" alt="SplitChain signed protocol message flow" width="100%"></p>
 
 ### Permitted branch types
 
-![Two permitted SplitChain branch types](docs/images/gallery/SplitChain%20—%20two%20permitted%20branch%20types.png)
+<p align="center"><img src="docs/images/gallery/SplitChain%20—%20two%20permitted%20branch%20types.png" alt="Two permitted SplitChain branch types" width="100%"></p>
 
 ### Branch lifecycle
 
-![SplitChain branch lifecycle](docs/images/gallery/splitchain-branch-lifecycle.png)
+<p align="center"><img src="docs/images/gallery/splitchain-branch-lifecycle.png" alt="SplitChain branch lifecycle" width="100%"></p>
 
 ### Observer-quorum activation gate
 
-![Observer quorum gates split activation](docs/images/gallery/Observer%20quorum%20gates%20split%20activation.png)
+<p align="center"><img src="docs/images/gallery/Observer%20quorum%20gates%20split%20activation.png" alt="Observer quorum gates split activation" width="100%"></p>
 
 ### Deterministic timestamp candidate selection
 
-![Deterministic tie-aware candidate selection](docs/images/gallery/SplitChain_%20deterministic%20tie-aware%20candidate%20selection.png)
+<p align="center"><img src="docs/images/gallery/SplitChain_%20deterministic%20tie-aware%20candidate%20selection.png" alt="Deterministic tie-aware candidate selection" width="100%"></p>
 
 ### Failure proof and counterproof
 
-![SplitChain failure proof and counterproof](docs/images/gallery/splitchain-failure-proof-and-counterproof.png)
+<p align="center"><img src="docs/images/gallery/splitchain-failure-proof-and-counterproof.png" alt="SplitChain failure proof and counterproof" width="100%"></p>
 
 ### Partitions, slashing and recovery
 
-![SplitChain partitions, slashing and recovery](docs/images/gallery/SPLITCHAIN%20—%20PARTITIONS,%20SLASHING%20%26%20RECOVERY.png)
+<p align="center"><img src="docs/images/gallery/SPLITCHAIN%20—%20PARTITIONS,%20SLASHING%20%26%20RECOVERY.png" alt="SplitChain partitions, slashing and recovery" width="100%"></p>
 
 ### Node accountability and re-entry
 
-![Node accountability lifecycle](docs/images/gallery/Node%20accountability%20lifecycle_%20stake%20loss%20to%20re-entry.png)
+<p align="center"><img src="docs/images/gallery/Node%20accountability%20lifecycle_%20stake%20loss%20to%20re-entry.png" alt="Node accountability lifecycle" width="100%"></p>
 
 ## Repository map
 
@@ -156,31 +156,31 @@ is no longer referenced from the README.
 
 ### Application layer
 
-![SplitChain application layer](docs/images/gallery/splitchain-application-layer-overview.png)
+<p align="center"><img src="docs/images/gallery/splitchain-application-layer-overview.png" alt="SplitChain application layer" width="100%"></p>
 
 ### SplitChain Services
 
-![SplitChain Services architecture](docs/images/gallery/splitchain-services-ecosystem-dashboard.png)
+<p align="center"><img src="docs/images/gallery/splitchain-services-ecosystem-dashboard.png" alt="SplitChain Services architecture" width="100%"></p>
 
 ### SplitChain protocol
 
-![SplitChain protocol architecture](docs/images/gallery/splitchain-protocol-architecture-overview.png)
+<p align="center"><img src="docs/images/gallery/splitchain-protocol-architecture-overview.png" alt="SplitChain protocol architecture" width="100%"></p>
 
 ### TrueLies
 
-![TrueLies consensus flow](docs/images/gallery/truelies-consensus-flow.png)
+<p align="center"><img src="docs/images/gallery/truelies-consensus-flow.png" alt="TrueLies consensus flow" width="100%"></p>
 
 ### Distributed nodes
 
-![SplitChain distributed node layer](docs/images/gallery/splitchain-distributed-nodes-infographic.png)
+<p align="center"><img src="docs/images/gallery/splitchain-distributed-nodes-infographic.png" alt="SplitChain distributed node layer" width="100%"></p>
 
 ### Security
 
-![SplitChain threat model and defenses](docs/images/gallery/splitchain-threat-model-and-defenses.png)
+<p align="center"><img src="docs/images/gallery/splitchain-threat-model-and-defenses.png" alt="SplitChain threat model and defenses" width="100%"></p>
 
 ### Development and verification
 
-![SplitChain development and verification roadmap](docs/images/gallery/splitchain-development-and-verification-roadmap.png)
+<p align="center"><img src="docs/images/gallery/splitchain-development-and-verification-roadmap.png" alt="SplitChain development and verification roadmap" width="100%"></p>
 
 ## Development process
 
