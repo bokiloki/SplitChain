@@ -89,6 +89,26 @@ The executable baseline deliberately implements only mechanisms that can current
 
 These remain proposals until they pass the project workflow and are promoted into the confirmed specification. See [`spec/protocol.md`](spec/protocol.md).
 
+## Protocol visual guide
+
+The updated diagrams below explain the proposed full protocol. They are design
+documentation, not proof that every mechanism is already implemented.
+
+| Concept | Diagram |
+|---|---|
+| DistOPS execution and trust modes | [DistOPS operating modes](docs/images/gallery/DistOPSModes.png) |
+| Node roles and network boundaries | [Node and network architecture](docs/images/gallery/splitchain-node-network-architecture.png) |
+| Signed commits, reveals and control messages | [Signed protocol message flow](docs/images/gallery/splitchain-signed-protocol-message-flow.png) |
+| Sender-only and jointly signed branches | [Two permitted branch types](docs/images/gallery/SplitChain%20—%20two%20permitted%20branch%20types.png) |
+| Complete branch state progression | [Branch lifecycle](docs/images/gallery/splitchain-branch-lifecycle.png) |
+| Observer acknowledgement gate | [Observer quorum](docs/images/gallery/Observer%20quorum%20gates%20split%20activation.png) |
+| Deterministic timestamp candidate ranking | [Candidate selection](docs/images/gallery/SplitChain_%20deterministic%20tie-aware%20candidate%20selection.png) |
+| Challenge and bounded response | [Failure proof and counterproof](docs/images/gallery/splitchain-failure-proof-and-counterproof.png) |
+| Isolation, penalties and safe re-entry | [Partitions, slashing and recovery](docs/images/gallery/SPLITCHAIN%20—%20PARTITIONS,%20SLASHING%20%26%20RECOVERY.png) |
+| Stake loss, sandboxing and re-entry | [Node accountability lifecycle](docs/images/gallery/Node%20accountability%20lifecycle_%20stake%20loss%20to%20re-entry.png) |
+
+![Two permitted SplitChain branch types](docs/images/gallery/SplitChain%20—%20two%20permitted%20branch%20types.png)
+
 ## Repository map
 
 | Path | Purpose |
@@ -105,7 +125,9 @@ These remain proposals until they pass the project workflow and are promoted int
 
 ## Architecture gallery
 
-The gallery contains both current diagrams and historical concept artwork. **Current terminology uses DistOPS.** Any image that still visibly says `DistOS` is a legacy visual pending graphical replacement; its old label must not be interpreted as the current component name.
+The primary gallery entries below use current **DistOPS** terminology. Historical
+artwork may still exist in the directory for provenance, but it is intentionally
+not used as the main project documentation.
 
 ### Ecosystem and application layers
 
@@ -113,7 +135,7 @@ The gallery contains both current diagrams and historical concept artwork. **Cur
 
 ![Application layer](docs/images/gallery/splitchain-application-layer-overview.png)
 
-![Distributed cloud ecosystem](docs/images/gallery/splitchain-decentralized-cloud-os-ecosystem.png)
+![DistOPS operating modes](docs/images/gallery/DistOPSModes.png)
 
 ### Services, protocol and consensus
 
@@ -136,6 +158,8 @@ The gallery contains both current diagrams and historical concept artwork. **Cur
 ![Threat model](docs/images/gallery/splitchain-threat-model-and-defenses.png)
 
 ![Core safety invariants](docs/images/gallery/splitchain-core-safety-invariants.png)
+
+![Partitions, slashing and recovery](docs/images/gallery/SPLITCHAIN%20—%20PARTITIONS,%20SLASHING%20%26%20RECOVERY.png)
 
 ### Dashboard, roadmap and scale
 

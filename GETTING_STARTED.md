@@ -119,7 +119,29 @@ docker compose down
 
 The distributed operating-system/workload layer is named **DistOPS**. Older visuals or historical artifacts may still contain the former name **DistOS**; those are legacy materials and should not be treated as current terminology.
 
-## 9. What to work on next
+## 9. Visual learning path
+
+Use this order to move from the ecosystem overview to protocol safety:
+
+1. [Ecosystem architecture](docs/images/gallery/splitchain-ecosystem-architecture.png)
+2. [Application layer](docs/images/gallery/splitchain-application-layer-overview.png)
+3. [DistOPS operating modes](docs/images/gallery/DistOPSModes.png)
+4. [Node and network architecture](docs/images/gallery/splitchain-node-network-architecture.png)
+5. [Two permitted branch types](docs/images/gallery/SplitChain%20—%20two%20permitted%20branch%20types.png)
+6. [Branch lifecycle](docs/images/gallery/splitchain-branch-lifecycle.png)
+7. [Observer quorum](docs/images/gallery/Observer%20quorum%20gates%20split%20activation.png)
+8. [Deterministic candidate selection](docs/images/gallery/SplitChain_%20deterministic%20tie-aware%20candidate%20selection.png)
+9. [Failure proof and counterproof](docs/images/gallery/splitchain-failure-proof-and-counterproof.png)
+10. [Core safety invariants](docs/images/gallery/splitchain-core-safety-invariants.png)
+11. [Threat model and defenses](docs/images/gallery/splitchain-threat-model-and-defenses.png)
+
+![SplitChain node and network architecture](docs/images/gallery/splitchain-node-network-architecture.png)
+
+The diagrams include broader research proposals. Use the executable baseline,
+tests and `spec/protocol.md` to determine which mechanisms are currently
+implemented.
+
+## 10. What to work on next
 
 The current executable baseline is deliberately smaller than the proposed full protocol. Major research areas include deterministic timestamp betting/commit-reveal, rotating observer selection, Overlord acknowledgements, failure proofs and counterproofs, slashing and reserve-pool rewards, node certification, governance, persistence, authenticated peer networking, and stronger DistOPS sandbox isolation.
 
