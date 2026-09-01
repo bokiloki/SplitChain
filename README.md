@@ -78,6 +78,8 @@ scplit rpc ecosystem.demo --url ws://127.0.0.1:8765
 - Canonical JSON and domain-separated hashes for protocol identifiers and commitments.
 - Seeded adversarial simulator with invariant checks.
 - Local JSON-over-WebSocket `splitd` reference node.
+- Optional authenticated RPC envelopes with actor binding and replay rejection.
+- Atomic reference-node state persistence and invariant-checked restart recovery.
 - `scplit` CLI for simulation, RPC and ecosystem demo.
 - DistOPS trust-aware workload scheduling and sandbox receipts.
 - SplitChain Services request lifecycle.
