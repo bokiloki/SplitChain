@@ -5,6 +5,7 @@ import websockets
 
 from splitchain.auth import RequestAuthenticator
 from splitchain.node import ReferenceNode
+from splitchain.transport import PeerIdentity
 
 
 def test_rpc_dispatch_flow():
@@ -104,5 +105,50 @@ def test_real_websocket_round_trip():
                 response = json.loads(await socket.recv())
                 assert response["id"] == "smoke"
                 assert response["result"]["balances"] == {"alice": 100, "bob": 0}
+
+    asyncio.run(scenario())
+
+
+def test_peer_roles_separate_client_and_consensus_methods():
+    async def scenario():
+        node = ReferenceNode({"alice": 100, "bob": 0})
+        client = PeerIdentity("client-a", "a" * 64, ("client",))
+        validator = PeerIdentity("validator-a", "b" * 64, ("secondary",))
+
+        offered = await node.dispatch({"id": 1, "method": "offer", "params": {
+            "sender": "alice", "receiver": "bob", "value": 10
+        }}, client)
+        assert "result" in offered
+
+        forbidden_advance = await node.dispatch(
+            {"id": 2, "method": "advance", "params": {"rounds": 1}}, client
+        )
+        assert "not authorized" in forbidden_advance["error"]["message"]
+
+        forbidden_offer = await node.dispatch({"id": 3, "method": "offer", "params": {
+            "sender": "alice", "receiver": "bob", "value": 10
+        }}, validator)
+        assert "not authorized" in forbidden_offer["error"]["message"]
+
+        advanced = await node.dispatch(
+            {"id": 4, "method": "advance", "params": {"rounds": 1}}, validator
+        )
+        assert "result" in advanced
+
+        assert "result" in await node.dispatch(
+            {"id": 5, "method": "status", "params": {}}, validator
+        )
+
+    asyncio.run(scenario())
+
+
+def test_peer_role_rejects_unknown_method_before_dispatch():
+    async def scenario():
+        node = ReferenceNode()
+        peer = PeerIdentity("client-a", "a" * 64, ("client",))
+        response = await node.dispatch({"id": 1, "method": "host.exec", "params": {}}, peer)
+        assert response["error"]["message"] == (
+            "peer client-a is not authorized for method host.exec"
+        )
 
     asyncio.run(scenario())

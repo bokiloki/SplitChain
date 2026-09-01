@@ -84,6 +84,7 @@ and caps the three nodes at a combined 1.5 CPUs and 768 MiB of memory.
 - Local JSON-over-WebSocket `splitd` reference node.
 - Optional TLS 1.3-only mutual certificate authentication for `splitd` and `scplit`.
 - Optional certificate-fingerprint registry binding mTLS peers to unique node IDs and roles.
+- Per-request peer-role authorization separating client transactions from round advancement.
 - Optional authenticated RPC envelopes with actor binding and replay rejection.
 - Atomic reference-node state persistence and invariant-checked restart recovery.
 - Persistent replay nonces across authenticated node restarts.
