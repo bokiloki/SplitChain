@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .distops import DistOPS, Workload
+from .distops import DistOPS, Workload, WorkloadManifest
 from .truelies import ServiceEvent, TrueLies
 
 
@@ -13,6 +13,8 @@ class ServiceRequest:
     request_id: str
     owner: str
     workload: Workload
+    manifest: WorkloadManifest | None = None
+    protocol_round: int = 0
 
 
 class ServiceLayer:
@@ -22,7 +24,11 @@ class ServiceLayer:
         self.requests: dict[str, dict] = {}
 
     def execute(self, request: ServiceRequest) -> dict:
-        receipt = self.distops.schedule(request.workload)
+        receipt = self.distops.schedule(
+            request.workload,
+            request.manifest,
+            current_round=request.protocol_round,
+        )
         event = ServiceEvent.create(
             "distops.compute",
             request.owner,
@@ -34,4 +40,3 @@ class ServiceLayer:
         result = {"request_id": request.request_id, "receipt": receipt, "proof": proof}
         self.requests[request.request_id] = result
         return result
-

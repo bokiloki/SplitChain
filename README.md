@@ -86,6 +86,8 @@ scplit rpc ecosystem.demo --url ws://127.0.0.1:8765
 - Proof-gated Primary → Secondary → Tertiary recovery with a three-round counterproof window.
 - `scplit` CLI for simulation, RPC and ecosystem demo.
 - DistOPS trust-aware workload scheduling and sandbox receipts.
+- DistOPS signed-manifest binding, risk/reputation admission, quotas, network policy,
+  ephemeral-secret metadata, and deterministic completion proofs.
 - SplitChain Services request lifecycle.
 - Local TrueLies three-observer 2/3 proof quorum and reputation counter.
 - TLA+ safety-core model and TLC configuration.
