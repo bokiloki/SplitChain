@@ -107,8 +107,6 @@ documentation, not proof that every mechanism is already implemented.
 | Isolation, penalties and safe re-entry | [Partitions, slashing and recovery](docs/images/gallery/SPLITCHAIN%20—%20PARTITIONS,%20SLASHING%20%26%20RECOVERY.png) |
 | Stake loss, sandboxing and re-entry | [Node accountability lifecycle](docs/images/gallery/Node%20accountability%20lifecycle_%20stake%20loss%20to%20re-entry.png) |
 
-![Two permitted SplitChain branch types](docs/images/gallery/SplitChain%20—%20two%20permitted%20branch%20types.png)
-
 ## Repository map
 
 | Path | Purpose |
@@ -123,51 +121,21 @@ documentation, not proof that every mechanism is already implemented.
 | `rfcs/` | Proposal workflow |
 | `security/` | Threat model and promotion gates |
 
-## Architecture gallery
+## Current component visuals
 
-The primary gallery entries below use current **DistOPS** terminology. Historical
-artwork may still exist in the directory for provenance, but it is intentionally
-not used as the main project documentation.
+Only reviewed diagrams using current project terminology are linked here.
+Historical and superseded artwork remains in the repository for provenance but
+is no longer referenced from the README.
 
-### Ecosystem and application layers
-
-![Ecosystem infographic](docs/images/gallery/splitchain-ecosystem-infographic.png)
-
-![Application layer](docs/images/gallery/splitchain-application-layer-overview.png)
-
-![DistOPS operating modes](docs/images/gallery/DistOPSModes.png)
-
-### Services, protocol and consensus
-
-![Services ecosystem](docs/images/gallery/splitchain-services-ecosystem-dashboard.png)
-
-![Protocol architecture](docs/images/gallery/splitchain-protocol-architecture-overview.png)
-
-![OLC-PST research concept](docs/images/gallery/olc-pst-consensus-mechanism-infographic.png)
-
-![TrueLies consensus](docs/images/gallery/truelies-consensus-flow.png)
-
-### Nodes, lifecycle and security
-
-![Distributed nodes](docs/images/gallery/splitchain-distributed-nodes-infographic.png)
-
-![Node communication](docs/images/gallery/splitchain-neon-network-communication-diagram.png)
-
-![Branch lifecycle](docs/images/gallery/splitchain-branch-lifecycle.png)
-
-![Threat model](docs/images/gallery/splitchain-threat-model-and-defenses.png)
-
-![Core safety invariants](docs/images/gallery/splitchain-core-safety-invariants.png)
-
-![Partitions, slashing and recovery](docs/images/gallery/SPLITCHAIN%20—%20PARTITIONS,%20SLASHING%20%26%20RECOVERY.png)
-
-### Dashboard, roadmap and scale
-
-![Dashboard](docs/images/gallery/splitchain-neon-blockchain-dashboard.png)
-
-![Development roadmap](docs/images/gallery/splitchain-development-and-verification-roadmap.png)
-
-![Ecosystem in numbers](docs/images/gallery/splitchain-ecosystem-in-numbers.png)
+| Component | Current diagram |
+|---|---|
+| Application layer | [Application architecture](docs/images/gallery/splitchain-application-layer-overview.png) |
+| SplitChain Services | [Services architecture](docs/images/gallery/splitchain-services-ecosystem-dashboard.png) |
+| SplitChain protocol | [Protocol architecture](docs/images/gallery/splitchain-protocol-architecture-overview.png) |
+| TrueLies | [Consensus flow](docs/images/gallery/truelies-consensus-flow.png) |
+| Distributed nodes | [Node layer](docs/images/gallery/splitchain-distributed-nodes-infographic.png) |
+| Security | [Threat model and defenses](docs/images/gallery/splitchain-threat-model-and-defenses.png) |
+| Verification | [Development and verification roadmap](docs/images/gallery/splitchain-development-and-verification-roadmap.png) |
 
 ## Development process
 
