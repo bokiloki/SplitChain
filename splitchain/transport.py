@@ -2,11 +2,66 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import ssl
 from dataclasses import dataclass
 from pathlib import Path
 
 from .model import ProtocolError
+
+ALLOWED_PEER_ROLES = frozenset({"primary", "secondary", "tertiary", "overlord", "client"})
+
+
+@dataclass(frozen=True)
+class PeerIdentity:
+    node_id: str
+    certificate_sha256: str
+    roles: tuple[str, ...]
+
+
+class PeerRegistry:
+    """Bind TLS certificate fingerprints to explicit SplitChain identities."""
+
+    def __init__(self, peers: tuple[PeerIdentity, ...]) -> None:
+        if not peers:
+            raise ProtocolError("peer certificate registry cannot be empty")
+        fingerprints: dict[str, PeerIdentity] = {}
+        node_ids: set[str] = set()
+        for peer in peers:
+            fingerprint = peer.certificate_sha256.lower()
+            if len(fingerprint) != 64 or any(char not in "0123456789abcdef" for char in fingerprint):
+                raise ProtocolError("peer certificate fingerprint must be sha256 hex")
+            if not peer.node_id or peer.node_id in node_ids or fingerprint in fingerprints:
+                raise ProtocolError("peer certificate registry contains a duplicate identity")
+            if not peer.roles or not set(peer.roles).issubset(ALLOWED_PEER_ROLES):
+                raise ProtocolError("peer certificate registry contains an invalid role")
+            normalized = PeerIdentity(peer.node_id, fingerprint, tuple(sorted(set(peer.roles))))
+            fingerprints[fingerprint] = normalized
+            node_ids.add(peer.node_id)
+        self._fingerprints = fingerprints
+
+    @classmethod
+    def from_path(cls, path: str | Path) -> PeerRegistry:
+        try:
+            document = json.loads(Path(path).read_text())
+            values = document["peers"]
+            peers = tuple(
+                PeerIdentity(value["node_id"], value["certificate_sha256"], tuple(value["roles"]))
+                for value in values
+            )
+        except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise ProtocolError("invalid peer certificate registry") from exc
+        return cls(peers)
+
+    def verify_der(self, certificate: bytes | None) -> PeerIdentity:
+        if not certificate:
+            raise ProtocolError("peer did not present a TLS certificate")
+        fingerprint = hashlib.sha256(certificate).hexdigest()
+        try:
+            return self._fingerprints[fingerprint]
+        except KeyError as exc:
+            raise ProtocolError("peer TLS certificate is not authorized") from exc
 
 
 @dataclass(frozen=True)

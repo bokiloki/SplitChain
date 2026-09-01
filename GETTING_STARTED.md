@@ -98,13 +98,22 @@ For encrypted node experiments, enable TLS 1.3 mutual authentication on both end
 
 ```bash
 splitd --host 127.0.0.1 --port 8765 \
-  --tls-cert node.crt --tls-key node.key --tls-ca ca.crt
+  --tls-cert node.crt --tls-key node.key --tls-ca ca.crt --tls-peers peers.json
 scplit rpc status --url wss://node.example:8765 \
   --tls-cert client.crt --tls-key client.key --tls-ca ca.crt
 ```
 
 All three TLS files are mandatory when TLS is enabled. The client verifies the server
 hostname, and the server rejects peers without a certificate signed by the configured CA.
+When `--tls-peers` is supplied, the server additionally hashes the presented DER
+certificate and requires an exact entry in the registry:
+
+```json
+{"peers":[{"node_id":"validator-a","certificate_sha256":"<64 hex characters>","roles":["primary"]}]}
+```
+
+Node IDs and certificate fingerprints must be unique, and roles are restricted to
+`primary`, `secondary`, `tertiary`, `overlord`, or `client`.
 
 ## 6. Run the lightweight three-node Docker environment
 

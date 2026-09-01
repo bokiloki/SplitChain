@@ -1,9 +1,11 @@
+import hashlib
+import json
 import ssl
 
 import pytest
 
 from splitchain.model import ProtocolError
-from splitchain.transport import TLSMaterial
+from splitchain.transport import PeerIdentity, PeerRegistry, TLSMaterial
 
 
 class FakeContext:
@@ -65,3 +67,35 @@ def test_client_context_requires_tls13_hostname_and_server_certificate(tmp_path,
     assert context.maximum_version is ssl.TLSVersion.TLSv1_3
     assert context.check_hostname is True
     assert context.verify_mode is ssl.CERT_REQUIRED
+
+
+def test_peer_registry_binds_certificate_to_node_and_roles(tmp_path):
+    certificate = b"peer certificate in DER form"
+    fingerprint = hashlib.sha256(certificate).hexdigest()
+    registry_path = tmp_path / "peers.json"
+    registry_path.write_text(json.dumps({"peers": [{
+        "node_id": "validator-a",
+        "certificate_sha256": fingerprint,
+        "roles": ["secondary", "primary"],
+    }]}))
+    identity = PeerRegistry.from_path(registry_path).verify_der(certificate)
+    assert identity.node_id == "validator-a"
+    assert identity.roles == ("primary", "secondary")
+
+
+def test_peer_registry_rejects_unknown_or_missing_certificates():
+    registry = PeerRegistry((PeerIdentity("node-a", "a" * 64, ("client",)),))
+    with pytest.raises(ProtocolError, match="not authorized"):
+        registry.verify_der(b"unknown")
+    with pytest.raises(ProtocolError, match="did not present"):
+        registry.verify_der(None)
+
+
+def test_peer_registry_rejects_duplicates_and_invalid_roles():
+    with pytest.raises(ProtocolError, match="duplicate identity"):
+        PeerRegistry((
+            PeerIdentity("node-a", "a" * 64, ("primary",)),
+            PeerIdentity("node-a", "b" * 64, ("secondary",)),
+        ))
+    with pytest.raises(ProtocolError, match="invalid role"):
+        PeerRegistry((PeerIdentity("node-a", "a" * 64, ("host-admin",)),))
