@@ -88,6 +88,8 @@ scplit rpc ecosystem.demo --url ws://127.0.0.1:8765
 - DistOPS trust-aware workload scheduling and sandbox receipts.
 - DistOPS signed-manifest binding, risk/reputation admission, quotas, network policy,
   ephemeral-secret metadata, and deterministic completion proofs.
+- Opt-in Docker/containerd runtime adapter with immutable images, attestation checks,
+  shell-free argv construction, isolation validation, and runtime-result proofs.
 - SplitChain Services request lifecycle.
 - Local TrueLies three-observer 2/3 proof quorum and reputation counter.
 - TLA+ safety-core model and TLC configuration.

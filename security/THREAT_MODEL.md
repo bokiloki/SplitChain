@@ -31,7 +31,8 @@ These are research-node controls. Certificates and gossip currently use determin
 keys and are not a substitute for public-key node identities, encrypted transport, multi-node
 consensus, hardware-backed keys, revocation infrastructure, or production key management.
 DistOPS receipts describe required enforcement but do not themselves launch or attest a real
-container/microVM runtime.
+container/microVM runtime. The opt-in runtime adapter validates deny-only container execution and
+attested controls, but production daemon hardening and independent remote attestation remain open.
 
 ## Known critical gaps
 
