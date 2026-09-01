@@ -74,6 +74,8 @@ scplit rpc ecosystem.demo --url ws://127.0.0.1:8765
 - Deterministic branch lifecycle: offer → accept → commit → three-round finality.
 - Cancellation and expiry for uncommitted branches.
 - Equal-value stake and single-commit enforcement.
+- Canonical split-point binding for every branch.
+- Canonical JSON and domain-separated hashes for protocol identifiers and commitments.
 - Seeded adversarial simulator with invariant checks.
 - Local JSON-over-WebSocket `splitd` reference node.
 - `scplit` CLI for simulation, RPC and ecosystem demo.

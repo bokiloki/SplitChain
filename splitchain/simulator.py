@@ -30,6 +30,10 @@ def assert_invariants(ledger: Ledger, initial_supply: int) -> None:
     for branch in ledger.branches.values():
         if branch.stake != branch.value:
             raise AssertionError("branch stake differs from value")
+        if ledger.canonical_history.get(branch.origin_height) != branch.origin_digest:
+            raise AssertionError("branch origin is not a recognized canonical split point")
+    if ledger.canonical_history.get(ledger.canonical_height) != ledger.canonical_digest:
+        raise AssertionError("canonical head is not present in canonical history")
 
 
 def run(seed: int = 1, steps: int = 200, accounts: int = 8) -> SimulationResult:
@@ -66,4 +70,3 @@ def run(seed: int = 1, steps: int = 200, accounts: int = 8) -> SimulationResult:
         assert_invariants(ledger, initial_supply)
 
     return SimulationResult(seed, steps, accepted, rejected, ledger.snapshot())
-

@@ -9,6 +9,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 from enum import Enum
+from typing import Any
 
 
 class ProtocolError(ValueError):
@@ -24,6 +25,29 @@ class BranchState(str, Enum):
     EXPIRED = "expired"
 
 
+def canonical_json(value: Any) -> bytes:
+    """Encode protocol data without whitespace or key-order ambiguity."""
+
+    try:
+        return json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ProtocolError("payload is not canonical JSON") from exc
+
+
+def protocol_digest(domain: str, value: Any) -> str:
+    """Hash canonical data with an explicit protocol domain separator."""
+
+    if not domain or "\x00" in domain:
+        raise ProtocolError("invalid hash domain")
+    return hashlib.sha256(domain.encode("ascii") + b"\x00" + canonical_json(value)).hexdigest()
+
+
 @dataclass
 class Branch:
     branch_id: str
@@ -33,6 +57,8 @@ class Branch:
     stake: int
     created_round: int
     expires_round: int
+    origin_height: int
+    origin_digest: str
     state: BranchState = BranchState.OFFERED
     accepted_round: int | None = None
     committed_round: int | None = None
@@ -55,6 +81,13 @@ class Ledger:
         self.locked: dict[str, int] = {}
         self.branches: dict[str, Branch] = {}
         self.finalized: list[dict] = []
+        self.canonical_height = 0
+        genesis = protocol_digest(
+            "splitchain/canonical-genesis/v1",
+            {"balances": dict(sorted(self.balances.items()))},
+        )
+        self.canonical_digest = genesis
+        self.canonical_history: dict[int, str] = {0: genesis}
 
     def available(self, account: str) -> int:
         return self.balances.get(account, 0) - self.locked.get(account, 0)
@@ -67,9 +100,29 @@ class Ledger:
         if self.available(sender) < value * 2:
             raise ProtocolError("sender needs value plus equal branch stake")
         nonce = len(self.branches)
-        payload = f"{sender}:{receiver}:{value}:{self.round}:{nonce}".encode()
-        branch_id = hashlib.sha256(payload).hexdigest()[:16]
-        branch = Branch(branch_id, sender, receiver, value, value, self.round, self.round + ttl)
+        branch_id = protocol_digest(
+            "splitchain/branch-id/v1",
+            {
+                "nonce": nonce,
+                "origin_digest": self.canonical_digest,
+                "origin_height": self.canonical_height,
+                "receiver": receiver,
+                "round": self.round,
+                "sender": sender,
+                "value": value,
+            },
+        )[:16]
+        branch = Branch(
+            branch_id,
+            sender,
+            receiver,
+            value,
+            value,
+            self.round,
+            self.round + ttl,
+            self.canonical_height,
+            self.canonical_digest,
+        )
         self.branches[branch_id] = branch
         self.locked[sender] = self.locked.get(sender, 0) + value * 2
         return branch
@@ -88,8 +141,7 @@ class Ledger:
         self._ensure_live(branch)
         if sender != branch.sender:
             raise ProtocolError("only the sender can commit")
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        branch.tx_digest = hashlib.sha256(canonical).hexdigest()
+        branch.tx_digest = protocol_digest("splitchain/tx-commit/v1", payload)
         branch.committed_round = self.round
         branch.state = BranchState.COMMITTED
         return branch
@@ -124,6 +176,10 @@ class Ledger:
     def snapshot(self) -> dict:
         return {
             "round": self.round,
+            "canonical_head": {
+                "height": self.canonical_height,
+                "digest": self.canonical_digest,
+            },
             "balances": dict(sorted(self.balances.items())),
             "locked": dict(sorted(self.locked.items())),
             "branches": [b.public() for b in self.branches.values()],
@@ -152,4 +208,14 @@ class Ledger:
         self._unlock(branch)
         branch.state = BranchState.FINAL
         self.finalized.append({"branch_id": branch.branch_id, "tx_digest": branch.tx_digest})
-
+        self.canonical_height += 1
+        self.canonical_digest = protocol_digest(
+            "splitchain/canonical-block/v1",
+            {
+                "branch_id": branch.branch_id,
+                "height": self.canonical_height,
+                "parent": self.canonical_digest,
+                "tx_digest": branch.tx_digest,
+            },
+        )
+        self.canonical_history[self.canonical_height] = self.canonical_digest

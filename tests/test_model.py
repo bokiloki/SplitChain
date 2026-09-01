@@ -1,6 +1,6 @@
 import pytest
 
-from splitchain.model import BranchState, Ledger, ProtocolError
+from splitchain.model import BranchState, Ledger, ProtocolError, protocol_digest
 
 
 def test_happy_path_finalizes_after_three_rounds():
@@ -39,3 +39,38 @@ def test_uncommitted_branch_expires_and_unlocks():
     assert branch.state == BranchState.EXPIRED
     assert ledger.available("alice") == 100
 
+
+def test_branch_is_bound_to_recognized_canonical_split_point():
+    ledger = Ledger({"alice": 100, "bob": 0})
+    branch = ledger.offer("alice", "bob", 10)
+
+    assert branch.origin_height == 0
+    assert branch.origin_digest == ledger.canonical_history[0]
+
+    ledger.accept(branch.branch_id, "bob")
+    ledger.commit(branch.branch_id, "alice", {"payment": 10})
+    ledger.advance(3)
+
+    assert ledger.canonical_height == 1
+    assert ledger.canonical_history[1] == ledger.canonical_digest
+    next_branch = ledger.offer("alice", "bob", 5)
+    assert next_branch.origin_height == 1
+    assert next_branch.origin_digest == ledger.canonical_digest
+
+
+def test_protocol_hashes_are_canonical_and_domain_separated():
+    left = protocol_digest("splitchain/test-a/v1", {"b": 2, "a": 1})
+    reordered = protocol_digest("splitchain/test-a/v1", {"a": 1, "b": 2})
+    other_domain = protocol_digest("splitchain/test-b/v1", {"a": 1, "b": 2})
+
+    assert left == reordered
+    assert left != other_domain
+
+
+def test_non_finite_json_commit_is_rejected():
+    ledger = Ledger({"alice": 100})
+    branch = ledger.offer("alice", "bob", 10)
+    ledger.accept(branch.branch_id, "bob")
+
+    with pytest.raises(ProtocolError, match="canonical JSON"):
+        ledger.commit(branch.branch_id, "alice", {"invalid": float("nan")})

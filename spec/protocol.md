@@ -24,6 +24,14 @@ Normative invariants in the executable model:
 6. Offers and accepted branches expire at their declared round and unlock funds.
 7. Finalization moves only `value`; the equal stake is unlocked.
 8. Total supply cannot change through any implemented transition.
+9. Every branch records the canonical height and digest at which it split; that pair must remain
+   present in canonical history.
+10. Branch IDs, transaction commitments, genesis state, and finalized canonical blocks use
+    canonical JSON plus explicit domain-separated SHA-256 hashing.
+
+Canonical JSON is UTF-8 JSON with lexicographically sorted keys, no insignificant whitespace,
+non-ASCII characters preserved, and non-finite numbers rejected. The implemented hash input is
+`ASCII(domain) || 0x00 || canonical_json(value)`.
 
 ## 3. Message surface
 

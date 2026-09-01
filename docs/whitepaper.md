@@ -17,13 +17,19 @@ The current repository proves a deliberately limited executable claim: a determi
 
 ## Implemented protocol core
 
-A temporary branch binds sender, receiver, value, equal-value stake, expiry, and one transaction commitment. Implemented branches move through `offered → accepted → committed → final`, with cancellation or expiry available before commitment. Finality currently requires three deterministic rounds.
+A temporary branch binds a recognized canonical split point, sender, receiver, value,
+equal-value stake, expiry, and one transaction commitment. The split point is the
+canonical ledger's `(height, digest)` pair at branch creation and remains verifiable
+in canonical history. Implemented branches move through
+`offered → accepted → committed → final`, with cancellation or expiry available
+before commitment. Finality currently requires three deterministic rounds.
 
 The implementation includes:
 
 - equal-value stake enforcement;
 - one commitment per branch;
-- canonical commitment hashing;
+- canonical, domain-separated hashing for branch IDs, commitments, genesis, and finalized blocks;
+- canonical-origin history checks in the simulator and TLA+ safety core;
 - deterministic expiry/cancellation;
 - supply-conservation checks;
 - seeded adversarial simulation;
