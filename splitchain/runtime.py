@@ -17,6 +17,7 @@ class RuntimeAttestation:
     issuer: str
     engine: str
     version: str
+    nonce: str
     rootless: bool
     seccomp: bool
     no_new_privileges: bool
@@ -43,17 +44,19 @@ class RuntimeAuthority:
         version: str,
         valid_from: int,
         valid_until: int,
+        nonce: str,
         *,
         rootless: bool = True,
         seccomp: bool = True,
         no_new_privileges: bool = True,
     ) -> RuntimeAttestation:
-        if valid_until <= valid_from:
+        if valid_until <= valid_from or not nonce:
             raise ProtocolError("invalid runtime attestation window")
         unsigned = {
             "engine": engine,
             "issuer": self.issuer,
             "no_new_privileges": no_new_privileges,
+            "nonce": nonce,
             "rootless": rootless,
             "seccomp": seccomp,
             "valid_from": valid_from,
@@ -85,7 +88,11 @@ class RuntimeAuthority:
 class ContainerCommandBuilder:
     DIGEST_IMAGE = re.compile(r"^[a-z0-9._/-]+@sha256:[0-9a-f]{64}$")
 
-    def build(self, receipt: dict) -> tuple[str, ...]:
+    def build(
+        self,
+        receipt: dict,
+        egress_gateway: TrustedEgressGateway | None = None,
+    ) -> tuple[str, ...]:
         sandbox = receipt.get("sandbox", {})
         workload = receipt.get("workload", {})
         image = workload.get("image", "")
@@ -108,8 +115,13 @@ class ContainerCommandBuilder:
         if any(sandbox.get(key) != value for key, value in required.items()):
             raise ProtocolError("receipt does not satisfy the runtime isolation contract")
         network = sandbox.get("network", {})
-        if network.get("mode") != "deny":
-            raise ProtocolError("direct runtime supports deny-only networking")
+        if network.get("mode") == "deny":
+            network_name = "none"
+        elif network.get("mode") == "allowlist" and egress_gateway:
+            egress_gateway.authorize(tuple(network.get("destinations", ())))
+            network_name = egress_gateway.network_name
+        else:
+            raise ProtocolError("allowlist networking requires a trusted egress gateway")
         quotas = sandbox.get("quotas", {})
         cpu = int(quotas.get("cpu", 0))
         memory_mb = int(quotas.get("memory_mb", 0))
@@ -123,7 +135,7 @@ class ContainerCommandBuilder:
             "--rm",
             "--read-only",
             "--network",
-            "none",
+            network_name,
             "--pids-limit",
             "256",
             "--cpus",
@@ -153,6 +165,92 @@ class ExecutionResult:
 Runner = Callable[[tuple[str, ...]], tuple[int, bytes, bytes]]
 
 
+@dataclass(frozen=True)
+class TrustedEgressGateway:
+    gateway_id: str
+    network_name: str
+    reputation: int
+    trusted: bool = True
+
+    CONSENSUS_NAMES = (
+        "consensus",
+        "validator",
+        "finality",
+        "overlord",
+        "splitd",
+    )
+
+    def authorize(self, destinations: tuple[str, ...]) -> None:
+        if not self.trusted or self.reputation < 80:
+            raise ProtocolError("egress gateway is not trusted and high-reputation")
+        if not destinations:
+            raise ProtocolError("egress allowlist is empty")
+        for destination in destinations:
+            host, separator, port = destination.rpartition(":")
+            if not separator or not host or not port.isdigit():
+                raise ProtocolError("invalid egress destination")
+            lowered = host.lower()
+            if any(name in lowered for name in self.CONSENSUS_NAMES):
+                raise ProtocolError("sandbox workloads cannot access consensus endpoints")
+
+
+@dataclass
+class SecretLease:
+    lease_id: str
+    expires_round: int
+    _values: dict[str, bytearray]
+    consumed: bool = False
+
+    def consume(self, current_round: int) -> dict[str, bytes]:
+        if self.consumed:
+            raise ProtocolError("secret lease was already consumed")
+        if current_round >= self.expires_round:
+            raise ProtocolError("secret lease expired")
+        result = {name: bytes(value) for name, value in self._values.items()}
+        for value in self._values.values():
+            value[:] = b"\x00" * len(value)
+        self._values.clear()
+        self.consumed = True
+        return result
+
+    def public(self) -> dict:
+        return {
+            "lease_id": self.lease_id,
+            "expires_round": self.expires_round,
+            "secret_names": tuple(sorted(self._values)),
+            "consumed": self.consumed,
+        }
+
+
+class EphemeralSecretProvider:
+    def __init__(self, secrets: dict[str, bytes]) -> None:
+        self._secrets = {name: bytes(value) for name, value in secrets.items()}
+        self._counter = 0
+
+    def issue(
+        self,
+        names: tuple[str, ...],
+        current_round: int,
+        ttl_rounds: int = 1,
+    ) -> SecretLease:
+        if ttl_rounds < 1 or not names:
+            raise ProtocolError("invalid ephemeral secret lease request")
+        try:
+            values = {name: bytearray(self._secrets[name]) for name in names}
+        except KeyError as exc:
+            raise ProtocolError("unknown ephemeral secret") from exc
+        self._counter += 1
+        lease_id = protocol_digest(
+            "splitchain/distops-secret-lease/v1",
+            {
+                "counter": self._counter,
+                "expires_round": current_round + ttl_rounds,
+                "names": names,
+            },
+        )[:20]
+        return SecretLease(lease_id, current_round + ttl_rounds, values)
+
+
 class ContainerRuntime:
     def __init__(
         self,
@@ -165,16 +263,20 @@ class ContainerRuntime:
         self.builder = ContainerCommandBuilder()
         self.runner = runner
         self.enable_execution = enable_execution
+        self._attestation_nonces: set[str] = set()
 
     def execute(
         self,
         receipt: dict,
         attestation: RuntimeAttestation,
         current_round: int,
+        egress_gateway: TrustedEgressGateway | None = None,
     ) -> ExecutionResult:
         if not self.authority.verify(attestation, current_round):
             raise ProtocolError("runtime attestation is invalid")
-        command = self.builder.build(receipt)
+        if attestation.nonce in self._attestation_nonces:
+            raise ProtocolError("runtime attestation nonce was already used")
+        command = self.builder.build(receipt, egress_gateway)
         expected_completion = protocol_digest(
             "splitchain/distops-completion/v1",
             {
@@ -186,6 +288,7 @@ class ContainerRuntime:
             raise ProtocolError("DistOPS completion proof does not match the receipt")
         if not self.enable_execution or self.runner is None:
             raise ProtocolError("container execution is disabled")
+        self._attestation_nonces.add(attestation.nonce)
         exit_code, stdout, stderr = self.runner(command)
         runtime_proof = protocol_digest(
             "splitchain/distops-runtime-result/v1",

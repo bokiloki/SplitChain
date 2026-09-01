@@ -1,25 +1,72 @@
 services:
   primary:
     build: .
-    command: ["--host", "0.0.0.0", "--port", "8765"]
-    ports: ["8765:8765"]
+    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json"]
+    ports: ["127.0.0.1:8765:8765"]
+    volumes: ["primary-data:/var/lib/splitchain"]
+    init: true
+    restart: unless-stopped
     read_only: true
-    tmpfs: ["/tmp"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=16m"]
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.50
+    healthcheck:
+      test: ["CMD", "scplit", "rpc", "status", "--url", "ws://127.0.0.1:8765"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      options: {max-size: "10m", max-file: "3"}
   secondary:
     build: .
-    command: ["--host", "0.0.0.0", "--port", "8765"]
-    ports: ["8766:8765"]
+    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json"]
+    ports: ["127.0.0.1:8766:8765"]
+    volumes: ["secondary-data:/var/lib/splitchain"]
+    init: true
+    restart: unless-stopped
     read_only: true
-    tmpfs: ["/tmp"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=16m"]
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.50
+    healthcheck:
+      test: ["CMD", "scplit", "rpc", "status", "--url", "ws://127.0.0.1:8765"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      options: {max-size: "10m", max-file: "3"}
   tertiary:
     build: .
-    command: ["--host", "0.0.0.0", "--port", "8765"]
-    ports: ["8767:8765"]
+    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json"]
+    ports: ["127.0.0.1:8767:8765"]
+    volumes: ["tertiary-data:/var/lib/splitchain"]
+    init: true
+    restart: unless-stopped
     read_only: true
-    tmpfs: ["/tmp"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=16m"]
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.50
+    healthcheck:
+      test: ["CMD", "scplit", "rpc", "status", "--url", "ws://127.0.0.1:8765"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      options: {max-size: "10m", max-file: "3"}
+
+volumes:
+  primary-data:
+  secondary-data:
+  tertiary-data:

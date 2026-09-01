@@ -94,13 +94,18 @@ and branch-scoped gossip model for three-node experiments. This is not productio
 identity, PKI, encrypted transport, consensus, or key management; keep the server on loopback
 unless you are working in an isolated test environment.
 
-## 6. Run the three-node Docker environment
+## 6. Run the lightweight three-node Docker environment
 
 ```bash
-docker compose up --build
+docker compose up --build -d
+docker compose ps
 ```
 
-The Compose environment starts three hardened reference-node containers on local ports 8765, 8766, and 8767.
+The Compose environment starts three hardened reference-node containers on loopback-only
+ports 8765, 8766, and 8767. Each node is limited to 0.5 CPU, 256 MiB of memory,
+128 processes, bounded logs and a 16 MiB temporary filesystem. Health checks and
+automatic restarts are enabled, and each ledger is stored in its own named volume.
+This is the supported lightweight single-server deployment; Kubernetes is not required.
 
 Try the ecosystem RPC:
 
@@ -113,6 +118,9 @@ Stop the environment with:
 ```bash
 docker compose down
 ```
+
+Named ledger volumes survive `docker compose down`. Do not add `--volumes` unless you
+intend to permanently delete the local node state.
 
 ## 7. Repository layout
 
