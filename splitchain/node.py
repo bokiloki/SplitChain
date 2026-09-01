@@ -12,7 +12,7 @@ from .auth import RequestAuthenticator
 from .ecosystem import Ecosystem
 from .model import Ledger, ProtocolError
 from .persistence import LedgerStore
-from .transport import TLSMaterial
+from .transport import PeerRegistry, TLSMaterial
 
 
 class ReferenceNode:
@@ -23,10 +23,12 @@ class ReferenceNode:
         balances: dict[str, int] | None = None,
         state_path: str | Path | None = None,
         auth_secrets: dict[str, str] | None = None,
+        peer_registry: PeerRegistry | None = None,
     ) -> None:
         initial = balances or {"alice": 1_000, "bob": 1_000}
         self.store = LedgerStore(state_path) if state_path else None
         self.authenticator = RequestAuthenticator(auth_secrets) if auth_secrets else None
+        self.peer_registry = peer_registry
         if self.store:
             self.ledger, replay_nonces = self.store.load_node_state(initial)
             if self.authenticator:
@@ -77,6 +79,11 @@ class ReferenceNode:
             return {"id": request_id, "error": {"code": "INVALID_REQUEST", "message": str(exc)}}
 
     async def handler(self, websocket: Any) -> None:
+        if self.peer_registry:
+            transport = getattr(websocket, "transport", None)
+            ssl_object = transport.get_extra_info("ssl_object") if transport else None
+            certificate = ssl_object.getpeercert(binary_form=True) if ssl_object else None
+            self.peer_registry.verify_der(certificate)
         async for raw in websocket:
             try:
                 request = json.loads(raw)
@@ -93,10 +100,11 @@ async def serve(
     port: int,
     state_path: str | None = None,
     tls: TLSMaterial | None = None,
+    peer_registry: PeerRegistry | None = None,
 ) -> None:
     import websockets
 
-    node = ReferenceNode(state_path=state_path)
+    node = ReferenceNode(state_path=state_path, peer_registry=peer_registry)
     ssl_context = tls.server_context() if tls else None
     async with websockets.serve(
         node.handler, host, port, max_size=64 * 1024, ssl=ssl_context
@@ -114,9 +122,16 @@ def main() -> None:
     parser.add_argument("--tls-cert", help="PEM node certificate")
     parser.add_argument("--tls-key", help="PEM node private key")
     parser.add_argument("--tls-ca", help="PEM certificate authority used to verify clients")
+    parser.add_argument(
+        "--tls-peers",
+        help="JSON registry binding authorized certificate fingerprints to node identities",
+    )
     args = parser.parse_args()
     tls = TLSMaterial.from_values(args.tls_cert, args.tls_key, args.tls_ca)
-    asyncio.run(serve(args.host, args.port, args.state, tls))
+    if args.tls_peers and not tls:
+        parser.error("--tls-peers requires TLS")
+    peers = PeerRegistry.from_path(args.tls_peers) if args.tls_peers else None
+    asyncio.run(serve(args.host, args.port, args.state, tls, peers))
 
 
 if __name__ == "__main__":
