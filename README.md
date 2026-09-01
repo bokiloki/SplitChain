@@ -94,18 +94,45 @@ These remain proposals until they pass the project workflow and are promoted int
 The updated diagrams below explain the proposed full protocol. They are design
 documentation, not proof that every mechanism is already implemented.
 
-| Concept | Diagram |
-|---|---|
-| DistOPS execution and trust modes | [DistOPS operating modes](docs/images/gallery/DistOPSModes.png) |
-| Node roles and network boundaries | [Node and network architecture](docs/images/gallery/splitchain-node-network-architecture.png) |
-| Signed commits, reveals and control messages | [Signed protocol message flow](docs/images/gallery/splitchain-signed-protocol-message-flow.png) |
-| Sender-only and jointly signed branches | [Two permitted branch types](docs/images/gallery/SplitChain%20—%20two%20permitted%20branch%20types.png) |
-| Complete branch state progression | [Branch lifecycle](docs/images/gallery/splitchain-branch-lifecycle.png) |
-| Observer acknowledgement gate | [Observer quorum](docs/images/gallery/Observer%20quorum%20gates%20split%20activation.png) |
-| Deterministic timestamp candidate ranking | [Candidate selection](docs/images/gallery/SplitChain_%20deterministic%20tie-aware%20candidate%20selection.png) |
-| Challenge and bounded response | [Failure proof and counterproof](docs/images/gallery/splitchain-failure-proof-and-counterproof.png) |
-| Isolation, penalties and safe re-entry | [Partitions, slashing and recovery](docs/images/gallery/SPLITCHAIN%20—%20PARTITIONS,%20SLASHING%20%26%20RECOVERY.png) |
-| Stake loss, sandboxing and re-entry | [Node accountability lifecycle](docs/images/gallery/Node%20accountability%20lifecycle_%20stake%20loss%20to%20re-entry.png) |
+### DistOPS execution and trust modes
+
+![DistOPS operating modes](docs/images/gallery/DistOPSModes.png)
+
+### Node roles and network boundaries
+
+![SplitChain node and network architecture](docs/images/gallery/splitchain-node-network-architecture.png)
+
+### Signed protocol messages
+
+![SplitChain signed protocol message flow](docs/images/gallery/splitchain-signed-protocol-message-flow.png)
+
+### Permitted branch types
+
+![Two permitted SplitChain branch types](docs/images/gallery/SplitChain%20—%20two%20permitted%20branch%20types.png)
+
+### Branch lifecycle
+
+![SplitChain branch lifecycle](docs/images/gallery/splitchain-branch-lifecycle.png)
+
+### Observer-quorum activation gate
+
+![Observer quorum gates split activation](docs/images/gallery/Observer%20quorum%20gates%20split%20activation.png)
+
+### Deterministic timestamp candidate selection
+
+![Deterministic tie-aware candidate selection](docs/images/gallery/SplitChain_%20deterministic%20tie-aware%20candidate%20selection.png)
+
+### Failure proof and counterproof
+
+![SplitChain failure proof and counterproof](docs/images/gallery/splitchain-failure-proof-and-counterproof.png)
+
+### Partitions, slashing and recovery
+
+![SplitChain partitions, slashing and recovery](docs/images/gallery/SPLITCHAIN%20—%20PARTITIONS,%20SLASHING%20%26%20RECOVERY.png)
+
+### Node accountability and re-entry
+
+![Node accountability lifecycle](docs/images/gallery/Node%20accountability%20lifecycle_%20stake%20loss%20to%20re-entry.png)
 
 ## Repository map
 
@@ -123,19 +150,37 @@ documentation, not proof that every mechanism is already implemented.
 
 ## Current component visuals
 
-Only reviewed diagrams using current project terminology are linked here.
+Only reviewed diagrams using current project terminology are displayed here.
 Historical and superseded artwork remains in the repository for provenance but
 is no longer referenced from the README.
 
-| Component | Current diagram |
-|---|---|
-| Application layer | [Application architecture](docs/images/gallery/splitchain-application-layer-overview.png) |
-| SplitChain Services | [Services architecture](docs/images/gallery/splitchain-services-ecosystem-dashboard.png) |
-| SplitChain protocol | [Protocol architecture](docs/images/gallery/splitchain-protocol-architecture-overview.png) |
-| TrueLies | [Consensus flow](docs/images/gallery/truelies-consensus-flow.png) |
-| Distributed nodes | [Node layer](docs/images/gallery/splitchain-distributed-nodes-infographic.png) |
-| Security | [Threat model and defenses](docs/images/gallery/splitchain-threat-model-and-defenses.png) |
-| Verification | [Development and verification roadmap](docs/images/gallery/splitchain-development-and-verification-roadmap.png) |
+### Application layer
+
+![SplitChain application layer](docs/images/gallery/splitchain-application-layer-overview.png)
+
+### SplitChain Services
+
+![SplitChain Services architecture](docs/images/gallery/splitchain-services-ecosystem-dashboard.png)
+
+### SplitChain protocol
+
+![SplitChain protocol architecture](docs/images/gallery/splitchain-protocol-architecture-overview.png)
+
+### TrueLies
+
+![TrueLies consensus flow](docs/images/gallery/truelies-consensus-flow.png)
+
+### Distributed nodes
+
+![SplitChain distributed node layer](docs/images/gallery/splitchain-distributed-nodes-infographic.png)
+
+### Security
+
+![SplitChain threat model and defenses](docs/images/gallery/splitchain-threat-model-and-defenses.png)
+
+### Development and verification
+
+![SplitChain development and verification roadmap](docs/images/gallery/splitchain-development-and-verification-roadmap.png)
 
 ## Development process
 
