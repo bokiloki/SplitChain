@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from .distops import ComputeNode, DistOPS, Risk, Workload
+from .finality import FinalityRole, FinalitySigner, ThreeRoundFinality
+from .identity import CertificateAuthority
 from .model import Ledger
 from .services import ServiceLayer, ServiceRequest
 from .truelies import TrueLies
@@ -37,12 +39,43 @@ class Ecosystem:
             "alice",
             {"service_proof": service["proof"]["event"]["event_id"]},
         )
+        authority = CertificateAuthority("ecosystem-finality-ca", "local-demo-ca-key")
+        signers = []
+        for role in (
+            FinalityRole.PRIMARY,
+            FinalityRole.SECONDARY,
+            FinalityRole.TERTIARY,
+        ):
+            certificate = authority.issue(
+                role.value,
+                f"{role.value}-public",
+                ("observer",),
+                0,
+                10,
+            )
+            signers.append(
+                FinalitySigner(certificate, role, f"local-{role.value}-key")
+            )
+        finality = ThreeRoundFinality(
+            authority,
+            branch.branch_id,
+            branch.tx_digest or "",
+            {signer.certificate.node_id: signer.role for signer in signers},
+        )
+        for round_number in range(1, finality.ROUNDS + 1):
+            for signer in signers[:2]:
+                vote = signer.vote(branch.branch_id, branch.tx_digest or "", round_number)
+                finality.acknowledge(
+                    vote,
+                    signer.certificate,
+                    signer.verification_key,
+                )
         self.ledger.advance(3)
         return {
             "application": {"request": "demo-001", "status": "completed"},
             "distops": service["receipt"],
             "truelies": service["proof"],
+            "finality": finality.status(),
             "protocol": self.ledger.snapshot(),
             "nodes": [node.node_id for node in self.distops.nodes],
         }
-

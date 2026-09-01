@@ -35,6 +35,15 @@ non-ASCII characters preserved, and non-finite numbers rejected. The implemented
 
 ## 3. Message surface
 
+The executable research model includes certified `Primary`, `Secondary`, and
+`Tertiary` observer roles. A candidate advances only after at least 2/3 distinct
+certified observers acknowledge the same branch and candidate digest in the current
+round. Three successive quorums mark the candidate final. Identical duplicate votes
+are idempotent; conflicting candidate votes quarantine the observer in the model.
+
+Role takeover timing, failure proofs, counterproof windows, penalties, and a distributed
+Overlord network remain proposals pending RFC, adversarial simulation, and formal analysis.
+
 The reference node accepts JSON requests `{id, method, params}` over WebSocket. Implemented
 methods: `status`, `offer`, `accept`, `commit`, `cancel`, and `advance`. This surface has no peer
 authentication and must bind to loopback by default.
