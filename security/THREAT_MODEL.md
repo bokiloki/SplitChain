@@ -23,10 +23,15 @@ expiry/finality interleavings. Runs are seeded and reproducible.
   rejects out-of-round/cross-branch votes, and quarantines conflicting candidate voters.
 - The recovery model requires 2/3 signed failure claims, preserves a counterproof window,
   advances roles deterministically, and aborts explicitly after Tertiary failure.
+- The DistOPS policy model binds signed manifests to complete workload requests, applies
+  risk-dependent trust/reputation gates, emits explicit isolation/quotas/network/secrets policy,
+  and generates domain-separated completion proofs.
 
 These are research-node controls. Certificates and gossip currently use deterministic local HMAC
 keys and are not a substitute for public-key node identities, encrypted transport, multi-node
 consensus, hardware-backed keys, revocation infrastructure, or production key management.
+DistOPS receipts describe required enforcement but do not themselves launch or attest a real
+container/microVM runtime.
 
 ## Known critical gaps
 
