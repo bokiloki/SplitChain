@@ -21,6 +21,8 @@ expiry/finality interleavings. Runs are seeded and reproducible.
   cross-certificate senders, and stale or duplicate branch-scoped sequences.
 - The finality model requires certified 2/3 acknowledgements in each of three successive rounds,
   rejects out-of-round/cross-branch votes, and quarantines conflicting candidate voters.
+- The recovery model requires 2/3 signed failure claims, preserves a counterproof window,
+  advances roles deterministically, and aborts explicitly after Tertiary failure.
 
 These are research-node controls. Certificates and gossip currently use deterministic local HMAC
 keys and are not a substitute for public-key node identities, encrypted transport, multi-node
