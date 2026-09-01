@@ -83,6 +83,7 @@ scplit rpc ecosystem.demo --url ws://127.0.0.1:8765
 - Persistent replay nonces across authenticated node restarts.
 - Deterministic three-node branch-scoped gossip with certificate, signature and sequence checks.
 - Certified Primary/Secondary/Tertiary acknowledgements with 2/3 quorum across three rounds.
+- Proof-gated Primary → Secondary → Tertiary recovery with a three-round counterproof window.
 - `scplit` CLI for simulation, RPC and ecosystem demo.
 - DistOPS trust-aware workload scheduling and sandbox receipts.
 - SplitChain Services request lifecycle.

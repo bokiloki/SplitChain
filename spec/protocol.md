@@ -44,6 +44,13 @@ are idempotent; conflicting candidate votes quarantine the observer in the model
 Role takeover timing, failure proofs, counterproof windows, penalties, and a distributed
 Overlord network remain proposals pending RFC, adversarial simulation, and formal analysis.
 
+The executable recovery experiment now models the agreed ordering and proof gates:
+two of three certified observers open a failure challenge against the active role;
+the accused role holder receives a configurable counterproof window (three protocol
+rounds in tests); an unresolved challenge advances Primary → Secondary → Tertiary;
+failure of all three roles enters an explicit aborted state. This does not define
+wall-clock timing, network synchrony, economic penalties, or slashing.
+
 The reference node accepts JSON requests `{id, method, params}` over WebSocket. Implemented
 methods: `status`, `offer`, `accept`, `commit`, `cancel`, and `advance`. This surface has no peer
 authentication and must bind to loopback by default.
