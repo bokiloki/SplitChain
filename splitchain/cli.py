@@ -40,7 +40,16 @@ def main() -> None:
     call = sub.add_parser("rpc", help="call a local splitd node")
     call.add_argument(
         "method",
-        choices=("status", "offer", "accept", "commit", "cancel", "advance", "ecosystem.demo"),
+        choices=(
+            "status",
+            "cluster.status",
+            "offer",
+            "accept",
+            "commit",
+            "cancel",
+            "advance",
+            "ecosystem.demo",
+        ),
     )
     call.add_argument("--params", default="{}", help="JSON object")
     call.add_argument("--url", default="ws://127.0.0.1:8765")

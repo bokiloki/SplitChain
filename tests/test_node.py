@@ -1,10 +1,12 @@
 import asyncio
 import json
 
+import pytest
 import websockets
 
 from splitchain.auth import RequestAuthenticator
-from splitchain.node import ReferenceNode
+from splitchain.model import ProtocolError
+from splitchain.node import ReferenceNode, parse_peer_values
 from splitchain.transport import PeerIdentity
 
 
@@ -152,3 +154,41 @@ def test_peer_role_rejects_unknown_method_before_dispatch():
         )
 
     asyncio.run(scenario())
+
+
+def test_cluster_status_probes_real_peer_and_reports_failures():
+    async def scenario():
+        secondary = ReferenceNode({"alice": 50}, node_id="secondary")
+        async with websockets.serve(secondary.handler, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            primary = ReferenceNode(
+                {"alice": 100},
+                node_id="primary",
+                peer_urls={
+                    "secondary": f"ws://127.0.0.1:{port}",
+                    "unavailable": "ws://127.0.0.1:1",
+                },
+            )
+            response = await primary.dispatch({
+                "id": "cluster", "method": "cluster.status", "params": {}
+            })
+        result = response["result"]
+        assert result["node_id"] == "primary"
+        assert result["peers"]["secondary"]["status"] == "available"
+        assert result["peers"]["secondary"]["ledger"]["balances"] == {"alice": 50}
+        assert result["peers"]["unavailable"] == {"status": "unavailable"}
+
+    asyncio.run(scenario())
+
+
+def test_peer_endpoint_parser_rejects_ambiguous_values():
+    assert parse_peer_values(["secondary=ws://secondary:8765"]) == {
+        "secondary": "ws://secondary:8765"
+    }
+    with pytest.raises(ProtocolError, match="unique"):
+        parse_peer_values(["secondary=http://secondary:8765"])
+    with pytest.raises(ProtocolError, match="unique"):
+        parse_peer_values([
+            "secondary=ws://secondary:8765",
+            "secondary=ws://other:8765",
+        ])

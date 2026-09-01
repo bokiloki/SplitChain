@@ -1,7 +1,7 @@
 services:
   primary:
     build: .
-    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json"]
+    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json", "--node-id", "primary", "--peer", "secondary=ws://secondary:8765", "--peer", "tertiary=ws://tertiary:8765"]
     ports: ["127.0.0.1:8765:8765"]
     volumes: ["primary-data:/var/lib/splitchain"]
     init: true
@@ -23,7 +23,7 @@ services:
       options: {max-size: "10m", max-file: "3"}
   secondary:
     build: .
-    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json"]
+    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json", "--node-id", "secondary", "--peer", "primary=ws://primary:8765", "--peer", "tertiary=ws://tertiary:8765"]
     ports: ["127.0.0.1:8766:8765"]
     volumes: ["secondary-data:/var/lib/splitchain"]
     init: true
@@ -45,7 +45,7 @@ services:
       options: {max-size: "10m", max-file: "3"}
   tertiary:
     build: .
-    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json"]
+    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json", "--node-id", "tertiary", "--peer", "primary=ws://primary:8765", "--peer", "secondary=ws://secondary:8765"]
     ports: ["127.0.0.1:8767:8765"]
     volumes: ["tertiary-data:/var/lib/splitchain"]
     init: true
