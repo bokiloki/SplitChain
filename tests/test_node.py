@@ -75,6 +75,25 @@ def test_authenticated_rpc_binds_actor_to_protocol_participant():
     asyncio.run(scenario())
 
 
+def test_replay_nonce_survives_restart(tmp_path):
+    async def scenario():
+        state = tmp_path / "node.json"
+        request = {"id": 1, "method": "offer", "params": {
+            "sender": "alice", "receiver": "bob", "value": 10
+        }}
+        request["auth"] = RequestAuthenticator.sign(request, "alice", 7, "test-secret")
+        first = ReferenceNode(
+            {"alice": 100, "bob": 0},
+            state_path=state,
+            auth_secrets={"alice": "test-secret"},
+        )
+        assert "result" in await first.dispatch(request)
+        restarted = ReferenceNode(state_path=state, auth_secrets={"alice": "test-secret"})
+        replayed = await restarted.dispatch(request)
+        assert replayed["error"]["message"] == "request nonce was already used"
+    asyncio.run(scenario())
+
+
 def test_real_websocket_round_trip():
     async def scenario():
         node = ReferenceNode({"alice": 100, "bob": 0})

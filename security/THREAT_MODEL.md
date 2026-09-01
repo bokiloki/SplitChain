@@ -15,17 +15,20 @@ expiry/finality interleavings. Runs are seeded and reproducible.
 ## Implemented reference defenses
 
 - Optional HMAC-authenticated RPC envelopes bind request ID, method, parameters, actor and nonce.
-- Per-actor monotonic nonces reject replay within one node process.
+- Per-actor monotonic nonces reject replay and persist with ledger mutations across restarts.
 - Atomic JSON state snapshots use file replacement and restore-time invariant validation.
+- Local certificate and three-node gossip models reject expired roles, invalid signatures,
+  cross-certificate senders, and stale or duplicate branch-scoped sequences.
 
-These are research-node controls, not a substitute for public-key node identities, encrypted
-transport, multi-node consensus, or production key management.
+These are research-node controls. Certificates and gossip currently use deterministic local HMAC
+keys and are not a substitute for public-key node identities, encrypted transport, multi-node
+consensus, hardware-backed keys, revocation infrastructure, or production key management.
 
 ## Known critical gaps
 
-No public-key identities or certificate lifecycle; no peer discovery or actual consensus; no
-transport encryption, persistent replay window, rate limit, message ordering guarantee, or
-resource accounting; no implementation of Overlords, PST triplets, slashing, failure proofs,
+No public-key identities, certificate revocation, or peer discovery; no actual consensus,
+transport encryption, rate limit, global message ordering guarantee, or resource accounting;
+no implementation of Overlords, PST triplets, slashing, failure proofs,
 counterproofs, reserve rewards, certified nodes, or governance.
 
 `splitd` defaults to loopback. Do not expose it publicly or use it with assets.
