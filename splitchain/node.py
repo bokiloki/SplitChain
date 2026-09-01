@@ -25,8 +25,13 @@ class ReferenceNode:
     ) -> None:
         initial = balances or {"alice": 1_000, "bob": 1_000}
         self.store = LedgerStore(state_path) if state_path else None
-        self.ledger = self.store.load(initial) if self.store else Ledger(initial)
         self.authenticator = RequestAuthenticator(auth_secrets) if auth_secrets else None
+        if self.store:
+            self.ledger, replay_nonces = self.store.load_node_state(initial)
+            if self.authenticator:
+                self.authenticator.restore(replay_nonces)
+        else:
+            self.ledger = Ledger(initial)
         self.ecosystem = Ecosystem()
         self._lock = asyncio.Lock()
 
@@ -64,7 +69,8 @@ class ReferenceNode:
                 else:
                     raise ProtocolError("unknown method")
                 if self.store and method in self.MUTATING_METHODS:
-                    self.store.save(self.ledger)
+                    replay = self.authenticator.snapshot() if self.authenticator else {}
+                    self.store.save(self.ledger, replay)
             return {"id": request_id, "result": result}
         except (ProtocolError, TypeError) as exc:
             return {"id": request_id, "error": {"code": "INVALID_REQUEST", "message": str(exc)}}

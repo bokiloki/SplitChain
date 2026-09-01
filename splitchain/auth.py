@@ -51,3 +51,12 @@ class RequestAuthenticator:
             raise ProtocolError("invalid request signature")
         self._nonces[actor] = nonce
         return actor
+
+    def snapshot(self) -> dict[str, int]:
+        return dict(sorted(self._nonces.items()))
+
+    def restore(self, nonces: dict[str, int]) -> None:
+        restored = {str(actor): int(nonce) for actor, nonce in nonces.items()}
+        if any(nonce < 0 for nonce in restored.values()):
+            raise ProtocolError("invalid replay state")
+        self._nonces = restored

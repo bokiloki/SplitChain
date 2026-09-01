@@ -88,8 +88,10 @@ scplit rpc offer --params '{"sender":"alice","receiver":"bob","value":10}'
 
 `splitd` remains a research reference node. Optional HMAC request authentication
 is available through `ReferenceNode(auth_secrets=...)` for controlled experiments,
-with actor binding and process-local nonce replay rejection. This is not production
-identity, persistent replay protection, or key management; keep the server on loopback
+with actor binding and restart-persistent nonce replay rejection when `--state` is used.
+The `identity` and `network` modules also provide a deterministic local certificate
+and branch-scoped gossip model for three-node experiments. This is not production
+identity, PKI, encrypted transport, consensus, or key management; keep the server on loopback
 unless you are working in an isolated test environment.
 
 ## 6. Run the three-node Docker environment
