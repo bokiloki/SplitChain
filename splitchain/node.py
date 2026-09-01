@@ -12,6 +12,7 @@ from .auth import RequestAuthenticator
 from .ecosystem import Ecosystem
 from .model import Ledger, ProtocolError
 from .persistence import LedgerStore
+from .transport import TLSMaterial
 
 
 class ReferenceNode:
@@ -87,12 +88,21 @@ class ReferenceNode:
             await websocket.send(json.dumps(response, sort_keys=True))
 
 
-async def serve(host: str, port: int, state_path: str | None = None) -> None:
+async def serve(
+    host: str,
+    port: int,
+    state_path: str | None = None,
+    tls: TLSMaterial | None = None,
+) -> None:
     import websockets
 
     node = ReferenceNode(state_path=state_path)
-    async with websockets.serve(node.handler, host, port, max_size=64 * 1024):
-        print(f"splitd listening on ws://{host}:{port}")
+    ssl_context = tls.server_context() if tls else None
+    async with websockets.serve(
+        node.handler, host, port, max_size=64 * 1024, ssl=ssl_context
+    ):
+        scheme = "wss" if tls else "ws"
+        print(f"splitd listening on {scheme}://{host}:{port}")
         await asyncio.Future()
 
 
@@ -101,8 +111,12 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--state", help="durable JSON ledger state path")
+    parser.add_argument("--tls-cert", help="PEM node certificate")
+    parser.add_argument("--tls-key", help="PEM node private key")
+    parser.add_argument("--tls-ca", help="PEM certificate authority used to verify clients")
     args = parser.parse_args()
-    asyncio.run(serve(args.host, args.port, args.state))
+    tls = TLSMaterial.from_values(args.tls_cert, args.tls_key, args.tls_ca)
+    asyncio.run(serve(args.host, args.port, args.state, tls))
 
 
 if __name__ == "__main__":
