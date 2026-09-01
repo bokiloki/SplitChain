@@ -12,7 +12,7 @@ from .auth import RequestAuthenticator
 from .ecosystem import Ecosystem
 from .model import Ledger, ProtocolError
 from .persistence import LedgerStore
-from .transport import PeerRegistry, TLSMaterial
+from .transport import PeerIdentity, PeerRegistry, TLSMaterial
 
 
 class ReferenceNode:
@@ -38,12 +38,18 @@ class ReferenceNode:
         self.ecosystem = Ecosystem()
         self._lock = asyncio.Lock()
 
-    async def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
+    async def dispatch(
+        self,
+        request: dict[str, Any],
+        peer_identity: PeerIdentity | None = None,
+    ) -> dict[str, Any]:
         request_id = request.get("id")
         method = request.get("method")
         params = request.get("params", {})
         try:
             async with self._lock:
+                if peer_identity:
+                    peer_identity.authorize(method)
                 if self.authenticator and method != "status":
                     actor = self.authenticator.verify(request)
                     actor_fields = {
@@ -79,17 +85,18 @@ class ReferenceNode:
             return {"id": request_id, "error": {"code": "INVALID_REQUEST", "message": str(exc)}}
 
     async def handler(self, websocket: Any) -> None:
+        peer_identity = None
         if self.peer_registry:
             transport = getattr(websocket, "transport", None)
             ssl_object = transport.get_extra_info("ssl_object") if transport else None
             certificate = ssl_object.getpeercert(binary_form=True) if ssl_object else None
-            self.peer_registry.verify_der(certificate)
+            peer_identity = self.peer_registry.verify_der(certificate)
         async for raw in websocket:
             try:
                 request = json.loads(raw)
                 if not isinstance(request, dict):
                     raise TypeError("request must be an object")
-                response = await self.dispatch(request)
+                response = await self.dispatch(request, peer_identity)
             except (json.JSONDecodeError, TypeError) as exc:
                 response = {"id": None, "error": {"code": "INVALID_JSON", "message": str(exc)}}
             await websocket.send(json.dumps(response, sort_keys=True))

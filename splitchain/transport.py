@@ -7,6 +7,7 @@ import json
 import ssl
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from .model import ProtocolError
 
@@ -18,6 +19,23 @@ class PeerIdentity:
     node_id: str
     certificate_sha256: str
     roles: tuple[str, ...]
+
+    METHOD_ROLES: ClassVar[dict[str, frozenset[str]]] = {
+        "status": ALLOWED_PEER_ROLES,
+        "ecosystem.demo": ALLOWED_PEER_ROLES,
+        "offer": frozenset({"client"}),
+        "accept": frozenset({"client"}),
+        "commit": frozenset({"client"}),
+        "cancel": frozenset({"client"}),
+        "advance": frozenset({"primary", "secondary", "tertiary", "overlord"}),
+    }
+
+    def authorize(self, method: str | None) -> None:
+        permitted = self.METHOD_ROLES.get(method or "", frozenset())
+        if not permitted.intersection(self.roles):
+            raise ProtocolError(
+                f"peer {self.node_id} is not authorized for method {method or '<missing>'}"
+            )
 
 
 class PeerRegistry:

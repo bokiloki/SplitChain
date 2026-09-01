@@ -114,6 +114,9 @@ certificate and requires an exact entry in the registry:
 
 Node IDs and certificate fingerprints must be unique, and roles are restricted to
 `primary`, `secondary`, `tertiary`, `overlord`, or `client`.
+The pinned roles are enforced for every RPC request: `client` may submit transaction
+methods, consensus and `overlord` roles may advance rounds, and all authorized peers may
+read status and the ecosystem demonstration. Unknown methods are denied before dispatch.
 
 ## 6. Run the lightweight three-node Docker environment
 
