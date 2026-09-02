@@ -18,8 +18,14 @@ class LedgerStore:
         return ledger
 
     def load_node_state(self, default_balances: dict[str, int]) -> tuple[Ledger, dict[str, int]]:
+        ledger, replay, _ = self.load_full_node_state(default_balances)
+        return ledger, replay
+
+    def load_full_node_state(
+        self, default_balances: dict[str, int]
+    ) -> tuple[Ledger, dict[str, int], dict[str, int]]:
         if not self.path.exists():
-            return Ledger(default_balances), {}
+            return Ledger(default_balances), {}, {}
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
@@ -28,18 +34,27 @@ class LedgerStore:
             replay = data.get("replay_nonces", {})
             if not isinstance(replay, dict):
                 raise ProtocolError("invalid replay state")
+            replication = data.get("replication_nonces", {})
+            if not isinstance(replication, dict):
+                raise ProtocolError("invalid replication replay state")
             return Ledger.from_snapshot(data["ledger"]), {
                 str(actor): int(nonce) for actor, nonce in replay.items()
-            }
-        return Ledger.from_snapshot(data), {}
+            }, {str(node): int(nonce) for node, nonce in replication.items()}
+        return Ledger.from_snapshot(data), {}, {}
 
-    def save(self, ledger: Ledger, replay_nonces: dict[str, int] | None = None) -> None:
+    def save(
+        self,
+        ledger: Ledger,
+        replay_nonces: dict[str, int] | None = None,
+        replication_nonces: dict[str, int] | None = None,
+    ) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_name(f".{self.path.name}.tmp")
         document = {
             "schema": "splitchain-node-state/v1",
             "ledger": ledger.snapshot(),
             "replay_nonces": dict(sorted((replay_nonces or {}).items())),
+            "replication_nonces": dict(sorted((replication_nonces or {}).items())),
         }
         payload = json.dumps(document, sort_keys=True, separators=(",", ":"))
         try:
