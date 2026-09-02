@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, ClassVar
@@ -14,6 +15,7 @@ from .auth import RequestAuthenticator
 from .ecosystem import Ecosystem
 from .model import Ledger, ProtocolError
 from .persistence import LedgerStore
+from .replication import ReplicationAuthenticator
 from .transport import PeerIdentity, PeerRegistry, TLSMaterial
 
 
@@ -49,6 +51,8 @@ class ReferenceNode:
         peer_registry: PeerRegistry | None = None,
         node_id: str = "local",
         peer_urls: dict[str, str] | None = None,
+        role: str = "standalone",
+        cluster_secret: str | None = None,
     ) -> None:
         initial = balances or {"alice": 1_000, "bob": 1_000}
         self.store = LedgerStore(state_path) if state_path else None
@@ -56,8 +60,13 @@ class ReferenceNode:
         self.peer_registry = peer_registry
         self.node_id = node_id
         self.peer_urls = dict(peer_urls or {})
+        self.role = role
+        self.replication = ReplicationAuthenticator(cluster_secret) if cluster_secret else None
+        self.replication_nonces: dict[str, int] = {}
         if self.store:
-            self.ledger, replay_nonces = self.store.load_node_state(initial)
+            self.ledger, replay_nonces, self.replication_nonces = self.store.load_full_node_state(
+                initial
+            )
             if self.authenticator:
                 self.authenticator.restore(replay_nonces)
         else:
@@ -74,11 +83,19 @@ class ReferenceNode:
         method = request.get("method")
         params = request.get("params", {})
         try:
+            if method == "replica.apply":
+                result = await self.apply_replica(params)
+                return {"id": request_id, "result": result}
             if peer_identity:
                 peer_identity.authorize(method)
             if method == "cluster.status":
                 result = await self.cluster_status()
                 return {"id": request_id, "result": result}
+            if method in self.MUTATING_METHODS and self.replication and self.role == "primary":
+                result = await self.replicate_mutation({"method": method, "params": params})
+                return {"id": request_id, "result": result}
+            if method in self.MUTATING_METHODS and self.replication and self.role != "standalone":
+                raise ProtocolError("mutations must be submitted to the Primary node")
             async with self._lock:
                 if self.authenticator and method != "status":
                     actor = self.authenticator.verify(request)
@@ -109,10 +126,89 @@ class ReferenceNode:
                     raise ProtocolError("unknown method")
                 if self.store and method in self.MUTATING_METHODS:
                     replay = self.authenticator.snapshot() if self.authenticator else {}
-                    self.store.save(self.ledger, replay)
+                    self.store.save(self.ledger, replay, self.replication_nonces)
             return {"id": request_id, "result": result}
         except (ProtocolError, TypeError) as exc:
             return {"id": request_id, "error": {"code": "INVALID_REQUEST", "message": str(exc)}}
+
+    def _apply_mutation(self, mutation: dict[str, Any]) -> Any:
+        method = mutation["method"]
+        params = mutation.get("params", {})
+        if method == "offer":
+            return self.ledger.offer(**params).public()
+        if method == "accept":
+            return self.ledger.accept(**params).public()
+        if method == "commit":
+            return self.ledger.commit(**params).public()
+        if method == "cancel":
+            return self.ledger.cancel(**params).public()
+        if method == "advance":
+            return [branch.public() for branch in self.ledger.advance(**params)]
+        raise ProtocolError("unknown replicated mutation")
+
+    def _save(self) -> None:
+        if self.store:
+            replay = self.authenticator.snapshot() if self.authenticator else {}
+            self.store.save(self.ledger, replay, self.replication_nonces)
+
+    async def apply_replica(self, envelope: dict) -> Any:
+        if not self.replication or self.role not in {"secondary", "tertiary"}:
+            raise ProtocolError("node does not accept replicated mutations")
+        async with self._lock:
+            leader, nonce, mutation = self.replication.verify(
+                envelope, self.replication_nonces.get("primary", 0)
+            )
+            trial = Ledger.from_snapshot(self.ledger.snapshot())
+            original = self.ledger
+            self.ledger = trial
+            try:
+                result = self._apply_mutation(mutation)
+            except Exception:
+                self.ledger = original
+                raise
+            self.replication_nonces[leader] = nonce
+            self._save()
+            return {"node_id": self.node_id, "nonce": nonce, "mutation": result}
+
+    async def replicate_mutation(self, mutation: dict[str, Any]) -> Any:
+        import websockets
+
+        if not self.replication:
+            raise ProtocolError("cluster replication is not configured")
+        async with self._lock:
+            trial = Ledger.from_snapshot(self.ledger.snapshot())
+            original = self.ledger
+            self.ledger = trial
+            try:
+                self._apply_mutation(mutation)
+            finally:
+                self.ledger = original
+            nonce = self.replication_nonces.get(self.node_id, 0) + 1
+            envelope = self.replication.sign(self.node_id, nonce, mutation)
+
+            async def send(url: str) -> bool:
+                try:
+                    async with asyncio.timeout(3):
+                        async with websockets.connect(url, max_size=64 * 1024) as socket:
+                            await socket.send(json.dumps({
+                                "id": f"replica-{nonce}",
+                                "method": "replica.apply",
+                                "params": envelope,
+                            }))
+                            response = json.loads(await socket.recv())
+                    return "result" in response
+                except (OSError, TimeoutError, ValueError):
+                    return False
+
+            acknowledgements = sum(await asyncio.gather(
+                *(send(url) for _, url in sorted(self.peer_urls.items()))
+            ))
+            if acknowledgements < 1:
+                raise ProtocolError("mutation did not receive a 2/3 cluster quorum")
+            result = self._apply_mutation(mutation)
+            self.replication_nonces[self.node_id] = nonce
+            self._save()
+            return result
 
     async def cluster_status(self) -> dict[str, Any]:
         import websockets
@@ -167,6 +263,8 @@ async def serve(
     peer_registry: PeerRegistry | None = None,
     node_id: str = "local",
     peer_urls: dict[str, str] | None = None,
+    role: str = "standalone",
+    cluster_secret: str | None = None,
 ) -> None:
     import websockets
 
@@ -175,6 +273,8 @@ async def serve(
         peer_registry=peer_registry,
         node_id=node_id,
         peer_urls=peer_urls,
+        role=role,
+        cluster_secret=cluster_secret,
     )
     ssl_context = tls.server_context() if tls else None
     async with websockets.serve(
@@ -191,6 +291,11 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--state", help="durable JSON ledger state path")
     parser.add_argument("--node-id", default="local", help="unique node identifier")
+    parser.add_argument(
+        "--role",
+        choices=("standalone", "primary", "secondary", "tertiary"),
+        default="standalone",
+    )
     parser.add_argument(
         "--peer",
         action="append",
@@ -213,7 +318,13 @@ def main() -> None:
         peer_urls = parse_peer_values(args.peer)
     except ProtocolError as exc:
         parser.error(str(exc))
-    asyncio.run(serve(args.host, args.port, args.state, tls, peers, args.node_id, peer_urls))
+    cluster_secret = os.environ.get("SPLITCHAIN_CLUSTER_SECRET")
+    if args.role != "standalone" and not cluster_secret:
+        parser.error("cluster roles require SPLITCHAIN_CLUSTER_SECRET")
+    asyncio.run(serve(
+        args.host, args.port, args.state, tls, peers, args.node_id, peer_urls,
+        args.role, cluster_secret,
+    ))
 
 
 if __name__ == "__main__":

@@ -121,6 +121,8 @@ read status and the ecosystem demonstration. Unknown methods are denied before d
 ## 6. Run the lightweight three-node Docker environment
 
 ```bash
+cp .env.example .env
+sed -i "s/replace-with-at-least-32-random-characters/$(openssl rand -hex 32)/" .env
 docker compose up --build -d
 docker compose ps
 ```
@@ -130,6 +132,8 @@ ports 8765, 8766, and 8767. Each node is limited to 0.5 CPU, 256 MiB of memory,
 128 processes, bounded logs and a 16 MiB temporary filesystem. Health checks and
 automatic restarts are enabled, and each ledger is stored in its own named volume.
 This is the supported lightweight single-server deployment; Kubernetes is not required.
+The generated cluster secret authenticates internal replication messages and is excluded
+from Git. Do not reuse it outside this test cluster.
 
 Try the ecosystem RPC:
 
@@ -146,6 +150,13 @@ scplit rpc cluster.status --url ws://127.0.0.1:8765
 The response reports the primary ledger and an `available` or `unavailable` result for
 the Secondary and Tertiary nodes. Peer probes have a three-second timeout and partial
 failure does not block results from healthy nodes.
+
+Mutating RPCs must be sent to Primary. It signs and sends the mutation to both replicas,
+requires at least one replica acknowledgement for a 2/3 quorum including itself, and only
+then commits and persists the mutation locally. Replicas independently validate the state
+transition, signature and monotonic nonce before persistence. Replication nonces survive
+restarts. This reference protocol does not yet provide crash recovery for an acknowledgement
+lost between replica persistence and the Primary commit; that remains a required hardening step.
 
 Stop the environment with:
 

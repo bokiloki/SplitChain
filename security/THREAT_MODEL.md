@@ -26,6 +26,9 @@ expiry/finality interleavings. Runs are seeded and reproducible.
 - The DistOPS policy model binds signed manifests to complete workload requests, applies
   risk-dependent trust/reputation gates, emits explicit isolation/quotas/network/secrets policy,
   and generates domain-separated completion proofs.
+- The connected reference cluster authenticates Primary mutation envelopes with a generated
+  HMAC secret, requires a 2/3 acknowledgement quorum including Primary, validates transitions
+  independently on replicas, and persists monotonic replay nonces with ledger state.
 
 These are research-node controls. Certificates and gossip currently use deterministic local HMAC
 keys and are not a substitute for public-key node identities, encrypted transport, multi-node
@@ -39,9 +42,12 @@ expiring secret leases whose in-memory buffers are cleared after consumption.
 
 ## Known critical gaps
 
-No public-key identities, certificate revocation, or peer discovery; no actual consensus,
-transport encryption, rate limit, global message ordering guarantee, or resource accounting;
-no implementation of Overlords, PST triplets, slashing, failure proofs,
+No certificate revocation, rate limit, global message ordering guarantee, or resource accounting.
+The acknowledgement quorum is not yet crash-safe consensus: an acknowledgement lost after a
+replica persists but before Primary commits can leave nodes divergent, and automatic catch-up is
+not yet implemented. The shared HMAC secret must be replaced by per-node hardware-backed signing
+keys before production use. There is no implementation of Overlords, PST triplets, slashing,
+failure proofs,
 counterproofs, reserve rewards, production-certified nodes, or governance.
 
 `splitd` defaults to loopback. Do not expose it publicly or use it with assets.
