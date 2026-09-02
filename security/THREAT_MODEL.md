@@ -45,8 +45,10 @@ expiring secret leases whose in-memory buffers are cleared after consumption.
 
 No certificate revocation, rate limit, global message ordering guarantee, or resource accounting.
 The acknowledgement quorum is not yet crash-safe consensus: an acknowledgement lost after a
-replica persists but before Primary commits can leave nodes divergent, and automatic catch-up is
-not yet implemented. The shared HMAC secret must be replaced by per-node hardware-backed signing
+replica prepares but before Primary commits leaves a durable non-mutating record that Primary
+aborts or completes after recovery. This closes the prior apply-before-decision divergence window,
+but it is not Byzantine consensus or automatic leader election. The shared HMAC secret must be
+replaced by per-node hardware-backed signing
 keys before production use. There is no implementation of Overlords, PST triplets, slashing,
 failure proofs,
 counterproofs, reserve rewards, production-certified nodes, or governance.

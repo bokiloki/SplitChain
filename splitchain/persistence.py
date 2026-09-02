@@ -48,6 +48,7 @@ class LedgerStore:
         replay_nonces: dict[str, int] | None = None,
         replication_nonces: dict[str, int] | None = None,
         replication_log: list[dict] | None = None,
+        replication_pending: dict | None = None,
     ) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_name(f".{self.path.name}.tmp")
@@ -57,6 +58,7 @@ class LedgerStore:
             "replay_nonces": dict(sorted((replay_nonces or {}).items())),
             "replication_nonces": dict(sorted((replication_nonces or {}).items())),
             "replication_log": replication_log or [],
+            "replication_pending": replication_pending,
         }
         payload = json.dumps(document, sort_keys=True, separators=(",", ":"))
         try:
@@ -85,3 +87,16 @@ class LedgerStore:
             return value
         except (OSError, json.JSONDecodeError) as exc:
             raise ProtocolError("unable to load replication log") from exc
+
+    def load_replication_pending(self) -> dict | None:
+        if not self.path.exists():
+            return None
+        try:
+            value = json.loads(self.path.read_text(encoding="utf-8")).get(
+                "replication_pending"
+            )
+            if value is not None and not isinstance(value, dict):
+                raise ProtocolError("invalid pending replication record")
+            return value
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ProtocolError("unable to load pending replication record") from exc
