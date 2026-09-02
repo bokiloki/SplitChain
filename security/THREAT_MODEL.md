@@ -53,6 +53,10 @@ keys before production use. There is no implementation of Overlords, PST triplet
 failure proofs,
 counterproofs, reserve rewards, production-certified nodes, or governance.
 
+The failover safety core requires two signed timeout votes at one committed position and uses
+monotonic terms with ordered succession. It prevents unilateral promotion in the model, but its
+heartbeat/vote transport and client redirection are not yet wired into the live node process.
+
 `splitd` defaults to loopback. Do not expose it publicly or use it with assets.
 
 ## Promotion gates

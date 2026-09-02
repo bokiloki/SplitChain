@@ -161,6 +161,12 @@ After an offline replica returns, run
 `scplit rpc cluster.sync --url ws://127.0.0.1:8765`; Primary reads each replica's durable
 position and replays only the missing, independently verified envelopes in order.
 
+The failover safety core models term-numbered, 2/3-certified succession from Primary to
+Secondary and then Tertiary. Votes must agree on timeout tick and committed replication
+position, while a fresh heartbeat cancels incomplete failure votes. Live background heartbeat,
+vote transport and endpoint redirection remain the next integration step; the current model is
+not yet an unattended production failover service.
+
 Stop the environment with:
 
 ```bash
