@@ -24,6 +24,7 @@ class PeerIdentity:
         "status": ALLOWED_PEER_ROLES,
         "ecosystem.demo": ALLOWED_PEER_ROLES,
         "cluster.status": ALLOWED_PEER_ROLES,
+        "cluster.sync": frozenset({"primary", "overlord"}),
         "offer": frozenset({"client"}),
         "accept": frozenset({"client"}),
         "commit": frozenset({"client"}),

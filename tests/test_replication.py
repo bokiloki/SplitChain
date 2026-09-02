@@ -124,3 +124,47 @@ def test_replication_nonce_survives_restart(tmp_path):
         assert "replayed" in replay["error"]["message"]
 
     asyncio.run(scenario())
+
+
+def test_offline_replica_catches_up_from_durable_signed_history(tmp_path):
+    async def scenario():
+        secondary = ReferenceNode(
+            state_path=tmp_path / "secondary.json",
+            node_id="secondary", role="secondary", cluster_secret=SECRET,
+        )
+        async with websockets.serve(secondary.handler, "127.0.0.1", 0) as server:
+            secondary_port = server.sockets[0].getsockname()[1]
+            primary = ReferenceNode(
+                state_path=tmp_path / "primary.json",
+                node_id="primary", role="primary", cluster_secret=SECRET,
+                peer_urls={
+                    "secondary": f"ws://127.0.0.1:{secondary_port}",
+                    "tertiary": "ws://127.0.0.1:1",
+                },
+            )
+            response = await primary.dispatch({
+                "id": 1, "method": "offer",
+                "params": {"sender": "alice", "receiver": "bob", "value": 10},
+            })
+            assert "result" in response
+
+        restarted_primary = ReferenceNode(
+            state_path=tmp_path / "primary.json",
+            node_id="primary", role="primary", cluster_secret=SECRET,
+        )
+        assert len(restarted_primary.replication_log) == 1
+        tertiary = ReferenceNode(
+            state_path=tmp_path / "tertiary.json",
+            node_id="tertiary", role="tertiary", cluster_secret=SECRET,
+        )
+        async with websockets.serve(tertiary.handler, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            restarted_primary.peer_urls = {"tertiary": f"ws://127.0.0.1:{port}"}
+            sync = await restarted_primary.dispatch({
+                "id": 2, "method": "cluster.sync", "params": {}
+            })
+        assert sync["result"] == {"tertiary": "synchronized"}
+        assert tertiary.ledger.snapshot() == restarted_primary.ledger.snapshot()
+        assert tertiary.replication_nonces == {"primary": 1}
+
+    asyncio.run(scenario())

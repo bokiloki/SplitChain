@@ -63,14 +63,22 @@ class ReferenceNode:
         self.role = role
         self.replication = ReplicationAuthenticator(cluster_secret) if cluster_secret else None
         self.replication_nonces: dict[str, int] = {}
+        self.replication_log: list[dict] = []
         if self.store:
             self.ledger, replay_nonces, self.replication_nonces = self.store.load_full_node_state(
                 initial
             )
             if self.authenticator:
                 self.authenticator.restore(replay_nonces)
+            self.replication_log = self.store.load_replication_log()
         else:
             self.ledger = Ledger(initial)
+        if self.replication and self.role == "primary":
+            last_nonce = 0
+            for envelope in self.replication_log:
+                _, last_nonce, _ = self.replication.verify(envelope, last_nonce)
+            if last_nonce != self.replication_nonces.get("primary", 0):
+                raise ProtocolError("replication log does not match Primary position")
         self.ecosystem = Ecosystem()
         self._lock = asyncio.Lock()
 
@@ -86,28 +94,29 @@ class ReferenceNode:
             if method == "replica.apply":
                 result = await self.apply_replica(params)
                 return {"id": request_id, "result": result}
+            if method == "replica.position":
+                if not self.replication or self.role not in {"secondary", "tertiary"}:
+                    raise ProtocolError("node does not expose a replica position")
+                return {"id": request_id, "result": {
+                    "node_id": self.node_id,
+                    "nonce": self.replication_nonces.get("primary", 0),
+                }}
             if peer_identity:
                 peer_identity.authorize(method)
             if method == "cluster.status":
                 result = await self.cluster_status()
                 return {"id": request_id, "result": result}
+            if method == "cluster.sync":
+                result = await self.sync_replicas()
+                return {"id": request_id, "result": result}
             if method in self.MUTATING_METHODS and self.replication and self.role == "primary":
+                self._verify_request_actor(request, method, params)
                 result = await self.replicate_mutation({"method": method, "params": params})
                 return {"id": request_id, "result": result}
             if method in self.MUTATING_METHODS and self.replication and self.role != "standalone":
                 raise ProtocolError("mutations must be submitted to the Primary node")
             async with self._lock:
-                if self.authenticator and method != "status":
-                    actor = self.authenticator.verify(request)
-                    actor_fields = {
-                        "offer": "sender",
-                        "accept": "receiver",
-                        "commit": "sender",
-                        "cancel": "actor",
-                    }
-                    actor_field = actor_fields.get(method)
-                    if actor_field and params.get(actor_field) != actor:
-                        raise ProtocolError("authenticated actor does not match request participant")
+                self._verify_request_actor(request, method, params)
                 if method == "status":
                     result = self.ledger.snapshot()
                 elif method == "ecosystem.demo":
@@ -131,6 +140,19 @@ class ReferenceNode:
         except (ProtocolError, TypeError) as exc:
             return {"id": request_id, "error": {"code": "INVALID_REQUEST", "message": str(exc)}}
 
+    def _verify_request_actor(self, request: dict, method: str | None, params: dict) -> None:
+        if not self.authenticator or method == "status":
+            return
+        actor = self.authenticator.verify(request)
+        actor_field = {
+            "offer": "sender",
+            "accept": "receiver",
+            "commit": "sender",
+            "cancel": "actor",
+        }.get(method)
+        if actor_field and params.get(actor_field) != actor:
+            raise ProtocolError("authenticated actor does not match request participant")
+
     def _apply_mutation(self, mutation: dict[str, Any]) -> Any:
         method = mutation["method"]
         params = mutation.get("params", {})
@@ -149,7 +171,9 @@ class ReferenceNode:
     def _save(self) -> None:
         if self.store:
             replay = self.authenticator.snapshot() if self.authenticator else {}
-            self.store.save(self.ledger, replay, self.replication_nonces)
+            self.store.save(
+                self.ledger, replay, self.replication_nonces, self.replication_log
+            )
 
     async def apply_replica(self, envelope: dict) -> Any:
         if not self.replication or self.role not in {"secondary", "tertiary"}:
@@ -171,8 +195,6 @@ class ReferenceNode:
             return {"node_id": self.node_id, "nonce": nonce, "mutation": result}
 
     async def replicate_mutation(self, mutation: dict[str, Any]) -> Any:
-        import websockets
-
         if not self.replication:
             raise ProtocolError("cluster replication is not configured")
         async with self._lock:
@@ -185,30 +207,59 @@ class ReferenceNode:
                 self.ledger = original
             nonce = self.replication_nonces.get(self.node_id, 0) + 1
             envelope = self.replication.sign(self.node_id, nonce, mutation)
-
-            async def send(url: str) -> bool:
-                try:
-                    async with asyncio.timeout(3):
-                        async with websockets.connect(url, max_size=64 * 1024) as socket:
-                            await socket.send(json.dumps({
-                                "id": f"replica-{nonce}",
-                                "method": "replica.apply",
-                                "params": envelope,
-                            }))
-                            response = json.loads(await socket.recv())
-                    return "result" in response
-                except (OSError, TimeoutError, ValueError):
-                    return False
-
             acknowledgements = sum(await asyncio.gather(
-                *(send(url) for _, url in sorted(self.peer_urls.items()))
+                *(self._sync_and_send(url, envelope) for _, url in sorted(self.peer_urls.items()))
             ))
             if acknowledgements < 1:
                 raise ProtocolError("mutation did not receive a 2/3 cluster quorum")
             result = self._apply_mutation(mutation)
             self.replication_nonces[self.node_id] = nonce
+            self.replication_log.append(envelope)
             self._save()
             return result
+
+    async def _replica_rpc(self, url: str, method: str, params: dict) -> dict | None:
+        import websockets
+
+        try:
+            async with asyncio.timeout(3):
+                async with websockets.connect(url, max_size=64 * 1024) as socket:
+                    await socket.send(json.dumps({"id": method, "method": method, "params": params}))
+                    return json.loads(await socket.recv())
+        except (OSError, TimeoutError, ValueError):
+            return None
+
+    async def _sync_and_send(self, url: str, envelope: dict | None = None) -> bool:
+        position = await self._replica_rpc(url, "replica.position", {})
+        if not position or "result" not in position:
+            return False
+        try:
+            nonce = int(position["result"].get("nonce", -1))
+        except (TypeError, ValueError):
+            return False
+        leader_position = self.replication_nonces.get("primary", 0)
+        if nonce < 0 or nonce > leader_position:
+            return False
+        for historical in self.replication_log[nonce:]:
+            response = await self._replica_rpc(url, "replica.apply", historical)
+            if not response or "result" not in response:
+                return False
+        if envelope is not None:
+            response = await self._replica_rpc(url, "replica.apply", envelope)
+            return bool(response and "result" in response)
+        return True
+
+    async def sync_replicas(self) -> dict[str, str]:
+        if not self.replication or self.role != "primary":
+            raise ProtocolError("only Primary can synchronize replicas")
+        async with self._lock:
+            results = await asyncio.gather(*(
+                self._sync_and_send(url) for _, url in sorted(self.peer_urls.items())
+            ))
+        return {
+            node_id: "synchronized" if ok else "unavailable"
+            for (node_id, _), ok in zip(sorted(self.peer_urls.items()), results, strict=True)
+        }
 
     async def cluster_status(self) -> dict[str, Any]:
         import websockets
