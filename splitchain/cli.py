@@ -43,6 +43,7 @@ def main() -> None:
         choices=(
             "status",
             "cluster.status",
+            "cluster.sync",
             "offer",
             "accept",
             "commit",

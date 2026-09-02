@@ -47,6 +47,7 @@ class LedgerStore:
         ledger: Ledger,
         replay_nonces: dict[str, int] | None = None,
         replication_nonces: dict[str, int] | None = None,
+        replication_log: list[dict] | None = None,
     ) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_name(f".{self.path.name}.tmp")
@@ -55,6 +56,7 @@ class LedgerStore:
             "ledger": ledger.snapshot(),
             "replay_nonces": dict(sorted((replay_nonces or {}).items())),
             "replication_nonces": dict(sorted((replication_nonces or {}).items())),
+            "replication_log": replication_log or [],
         }
         payload = json.dumps(document, sort_keys=True, separators=(",", ":"))
         try:
@@ -71,3 +73,15 @@ class LedgerStore:
         except OSError as exc:
             temporary.unlink(missing_ok=True)
             raise ProtocolError("unable to persist ledger state") from exc
+
+    def load_replication_log(self) -> list[dict]:
+        if not self.path.exists():
+            return []
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            value = data.get("replication_log", [])
+            if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+                raise ProtocolError("invalid replication log")
+            return value
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ProtocolError("unable to load replication log") from exc

@@ -157,6 +157,9 @@ then commits and persists the mutation locally. Replicas independently validate 
 transition, signature and monotonic nonce before persistence. Replication nonces survive
 restarts. This reference protocol does not yet provide crash recovery for an acknowledgement
 lost between replica persistence and the Primary commit; that remains a required hardening step.
+Primary also persists the signed mutation history. After an offline replica returns, run
+`scplit rpc cluster.sync --url ws://127.0.0.1:8765`; Primary reads each replica's durable
+position and replays only the missing, independently verified envelopes in order.
 
 Stop the environment with:
 

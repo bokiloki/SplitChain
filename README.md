@@ -92,6 +92,7 @@ and caps the three nodes at a combined 1.5 CPUs and 768 MiB of memory.
 - Connected three-node Compose topology with bounded peer probes and `cluster.status`.
 - HMAC-authenticated Primary-to-replica mutations with 2/3 acknowledgement quorum,
   independent validation, durable state and restart-persistent replay rejection.
+- Durable signed mutation history and `cluster.sync` catch-up for returning replicas.
 - Certified Primary/Secondary/Tertiary acknowledgements with 2/3 quorum across three rounds.
 - Proof-gated Primary → Secondary → Tertiary recovery with a three-round counterproof window.
 - `scplit` CLI for simulation, RPC and ecosystem demo.

@@ -28,7 +28,8 @@ expiry/finality interleavings. Runs are seeded and reproducible.
   and generates domain-separated completion proofs.
 - The connected reference cluster authenticates Primary mutation envelopes with a generated
   HMAC secret, requires a 2/3 acknowledgement quorum including Primary, validates transitions
-  independently on replicas, and persists monotonic replay nonces with ledger state.
+  independently on replicas, persists monotonic replay nonces and signed history, and replays
+  missing entries in order when a replica returns.
 
 These are research-node controls. Certificates and gossip currently use deterministic local HMAC
 keys and are not a substitute for public-key node identities, encrypted transport, multi-node
