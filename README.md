@@ -94,6 +94,8 @@ and caps the three nodes at a combined 1.5 CPUs and 768 MiB of memory.
   independent validation, durable state and restart-persistent replay rejection.
 - Durable signed mutation history and `cluster.sync` catch-up for returning replicas.
 - Durable prepare/commit records preventing replicas from applying uncommitted proposals.
+- Term-based failover safety core with signed 2/3 timeout certificates, committed-position
+  agreement and deterministic Primary → Secondary → Tertiary succession.
 - Certified Primary/Secondary/Tertiary acknowledgements with 2/3 quorum across three rounds.
 - Proof-gated Primary → Secondary → Tertiary recovery with a three-round counterproof window.
 - `scplit` CLI for simulation, RPC and ecosystem demo.
