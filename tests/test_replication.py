@@ -112,16 +112,54 @@ def test_replication_nonce_survives_restart(tmp_path):
         node = ReferenceNode(
             state_path=state, node_id="secondary", role="secondary", cluster_secret=SECRET
         )
-        assert "result" in await node.dispatch({
-            "id": 1, "method": "replica.apply", "params": envelope
+        prepared = await node.dispatch({
+            "id": 1, "method": "replica.prepare", "params": envelope
         })
+        assert prepared["result"]["state"] == "prepared"
+        restarted = ReferenceNode(
+            state_path=state, node_id="secondary", role="secondary", cluster_secret=SECRET
+        )
+        assert restarted.replication_pending == envelope
+        committed = await restarted.dispatch({
+            "id": 2, "method": "replica.commit", "params": envelope
+        })
+        assert "result" in committed
         restarted = ReferenceNode(
             state_path=state, node_id="secondary", role="secondary", cluster_secret=SECRET
         )
         replay = await restarted.dispatch({
-            "id": 2, "method": "replica.apply", "params": envelope
+            "id": 3, "method": "replica.prepare", "params": envelope
         })
         assert "replayed" in replay["error"]["message"]
+
+    asyncio.run(scenario())
+
+
+def test_prepare_does_not_change_ledger_and_abort_survives_restart(tmp_path):
+    async def scenario():
+        state = tmp_path / "secondary.json"
+        auth = ReplicationAuthenticator(SECRET)
+        envelope = auth.sign("primary", 1, {
+            "method": "offer",
+            "params": {"sender": "alice", "receiver": "bob", "value": 10},
+        })
+        node = ReferenceNode(
+            state_path=state, node_id="secondary", role="secondary", cluster_secret=SECRET
+        )
+        before = node.ledger.snapshot()
+        assert "result" in await node.dispatch({
+            "id": 1, "method": "replica.prepare", "params": envelope
+        })
+        assert node.ledger.snapshot() == before
+        assert node.replication_pending == envelope
+        restarted = ReferenceNode(
+            state_path=state, node_id="secondary", role="secondary", cluster_secret=SECRET
+        )
+        assert "result" in await restarted.dispatch({
+            "id": 2, "method": "replica.abort", "params": envelope
+        })
+        assert restarted.replication_pending is None
+        assert restarted.ledger.snapshot() == before
 
     asyncio.run(scenario())
 

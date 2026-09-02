@@ -64,6 +64,7 @@ class ReferenceNode:
         self.replication = ReplicationAuthenticator(cluster_secret) if cluster_secret else None
         self.replication_nonces: dict[str, int] = {}
         self.replication_log: list[dict] = []
+        self.replication_pending: dict | None = None
         if self.store:
             self.ledger, replay_nonces, self.replication_nonces = self.store.load_full_node_state(
                 initial
@@ -71,6 +72,7 @@ class ReferenceNode:
             if self.authenticator:
                 self.authenticator.restore(replay_nonces)
             self.replication_log = self.store.load_replication_log()
+            self.replication_pending = self.store.load_replication_pending()
         else:
             self.ledger = Ledger(initial)
         if self.replication and self.role == "primary":
@@ -91,8 +93,14 @@ class ReferenceNode:
         method = request.get("method")
         params = request.get("params", {})
         try:
-            if method == "replica.apply":
-                result = await self.apply_replica(params)
+            if method == "replica.prepare":
+                result = await self.prepare_replica(params)
+                return {"id": request_id, "result": result}
+            if method == "replica.commit":
+                result = await self.commit_replica(params)
+                return {"id": request_id, "result": result}
+            if method == "replica.abort":
+                result = await self.abort_replica(params)
                 return {"id": request_id, "result": result}
             if method == "replica.position":
                 if not self.replication or self.role not in {"secondary", "tertiary"}:
@@ -172,32 +180,61 @@ class ReferenceNode:
         if self.store:
             replay = self.authenticator.snapshot() if self.authenticator else {}
             self.store.save(
-                self.ledger, replay, self.replication_nonces, self.replication_log
+                self.ledger,
+                replay,
+                self.replication_nonces,
+                self.replication_log,
+                self.replication_pending,
             )
 
-    async def apply_replica(self, envelope: dict) -> Any:
+    def _verify_replica_envelope(self, envelope: dict) -> tuple[str, int, dict]:
         if not self.replication or self.role not in {"secondary", "tertiary"}:
             raise ProtocolError("node does not accept replicated mutations")
+        return self.replication.verify(envelope, self.replication_nonces.get("primary", 0))
+
+    async def prepare_replica(self, envelope: dict) -> Any:
         async with self._lock:
-            leader, nonce, mutation = self.replication.verify(
-                envelope, self.replication_nonces.get("primary", 0)
-            )
+            _, nonce, mutation = self._verify_replica_envelope(envelope)
+            if self.replication_pending:
+                if self.replication_pending == envelope:
+                    return {"node_id": self.node_id, "nonce": nonce, "state": "prepared"}
+                raise ProtocolError("replica already has a different prepared mutation")
             trial = Ledger.from_snapshot(self.ledger.snapshot())
             original = self.ledger
             self.ledger = trial
             try:
-                result = self._apply_mutation(mutation)
-            except Exception:
+                self._apply_mutation(mutation)
+            finally:
                 self.ledger = original
-                raise
+            self.replication_pending = envelope
+            self._save()
+            return {"node_id": self.node_id, "nonce": nonce, "state": "prepared"}
+
+    async def commit_replica(self, envelope: dict) -> Any:
+        async with self._lock:
+            leader, nonce, mutation = self._verify_replica_envelope(envelope)
+            if self.replication_pending != envelope:
+                raise ProtocolError("replica commit does not match its prepared mutation")
+            result = self._apply_mutation(mutation)
             self.replication_nonces[leader] = nonce
+            self.replication_pending = None
             self._save()
             return {"node_id": self.node_id, "nonce": nonce, "mutation": result}
+
+    async def abort_replica(self, envelope: dict) -> Any:
+        async with self._lock:
+            _, nonce, _ = self._verify_replica_envelope(envelope)
+            if self.replication_pending and self.replication_pending != envelope:
+                raise ProtocolError("replica abort does not match its prepared mutation")
+            self.replication_pending = None
+            self._save()
+            return {"node_id": self.node_id, "nonce": nonce, "state": "aborted"}
 
     async def replicate_mutation(self, mutation: dict[str, Any]) -> Any:
         if not self.replication:
             raise ProtocolError("cluster replication is not configured")
         async with self._lock:
+            await self._abort_uncommitted_primary()
             trial = Ledger.from_snapshot(self.ledger.snapshot())
             original = self.ledger
             self.ledger = trial
@@ -207,15 +244,28 @@ class ReferenceNode:
                 self.ledger = original
             nonce = self.replication_nonces.get(self.node_id, 0) + 1
             envelope = self.replication.sign(self.node_id, nonce, mutation)
+            self.replication_pending = envelope
+            self._save()
             acknowledgements = sum(await asyncio.gather(
-                *(self._sync_and_send(url, envelope) for _, url in sorted(self.peer_urls.items()))
+                *(self._sync_and_prepare(url, envelope) for _, url in sorted(self.peer_urls.items()))
             ))
             if acknowledgements < 1:
+                await asyncio.gather(*(
+                    self._replica_rpc(url, "replica.abort", envelope)
+                    for _, url in sorted(self.peer_urls.items())
+                ))
+                self.replication_pending = None
+                self._save()
                 raise ProtocolError("mutation did not receive a 2/3 cluster quorum")
             result = self._apply_mutation(mutation)
             self.replication_nonces[self.node_id] = nonce
             self.replication_log.append(envelope)
+            self.replication_pending = None
             self._save()
+            await asyncio.gather(*(
+                self._replica_rpc(url, "replica.commit", envelope)
+                for _, url in sorted(self.peer_urls.items())
+            ))
             return result
 
     async def _replica_rpc(self, url: str, method: str, params: dict) -> dict | None:
@@ -229,7 +279,7 @@ class ReferenceNode:
         except (OSError, TimeoutError, ValueError):
             return None
 
-    async def _sync_and_send(self, url: str, envelope: dict | None = None) -> bool:
+    async def _sync_history(self, url: str) -> bool:
         position = await self._replica_rpc(url, "replica.position", {})
         if not position or "result" not in position:
             return False
@@ -241,20 +291,36 @@ class ReferenceNode:
         if nonce < 0 or nonce > leader_position:
             return False
         for historical in self.replication_log[nonce:]:
-            response = await self._replica_rpc(url, "replica.apply", historical)
-            if not response or "result" not in response:
+            prepared = await self._replica_rpc(url, "replica.prepare", historical)
+            committed = await self._replica_rpc(url, "replica.commit", historical)
+            if not prepared or "result" not in prepared or not committed or "result" not in committed:
                 return False
-        if envelope is not None:
-            response = await self._replica_rpc(url, "replica.apply", envelope)
-            return bool(response and "result" in response)
         return True
+
+    async def _sync_and_prepare(self, url: str, envelope: dict) -> bool:
+        if not await self._sync_history(url):
+            return False
+        response = await self._replica_rpc(url, "replica.prepare", envelope)
+        return bool(response and "result" in response)
+
+    async def _abort_uncommitted_primary(self) -> None:
+        if not self.replication_pending:
+            return
+        envelope = self.replication_pending
+        await asyncio.gather(*(
+            self._replica_rpc(url, "replica.abort", envelope)
+            for _, url in sorted(self.peer_urls.items())
+        ))
+        self.replication_pending = None
+        self._save()
 
     async def sync_replicas(self) -> dict[str, str]:
         if not self.replication or self.role != "primary":
             raise ProtocolError("only Primary can synchronize replicas")
         async with self._lock:
+            await self._abort_uncommitted_primary()
             results = await asyncio.gather(*(
-                self._sync_and_send(url) for _, url in sorted(self.peer_urls.items())
+                self._sync_history(url) for _, url in sorted(self.peer_urls.items())
             ))
         return {
             node_id: "synchronized" if ok else "unavailable"

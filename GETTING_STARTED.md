@@ -151,13 +151,13 @@ The response reports the primary ledger and an `available` or `unavailable` resu
 the Secondary and Tertiary nodes. Peer probes have a three-second timeout and partial
 failure does not block results from healthy nodes.
 
-Mutating RPCs must be sent to Primary. It signs and sends the mutation to both replicas,
-requires at least one replica acknowledgement for a 2/3 quorum including itself, and only
-then commits and persists the mutation locally. Replicas independently validate the state
-transition, signature and monotonic nonce before persistence. Replication nonces survive
-restarts. This reference protocol does not yet provide crash recovery for an acknowledgement
-lost between replica persistence and the Primary commit; that remains a required hardening step.
-Primary also persists the signed mutation history. After an offline replica returns, run
+Mutating RPCs must be sent to Primary. It durably records a signed proposal, sends `prepare`
+to both replicas, and requires at least one prepared replica for a 2/3 quorum including itself.
+Prepare validates the transition without changing balances. Primary then persists its commit
+decision before sending `commit`; replicas apply only a matching prepared envelope. Prepared
+records, commit history and replay nonces survive restarts, while failed quorum attempts are
+explicitly aborted without changing the ledger.
+After an offline replica returns, run
 `scplit rpc cluster.sync --url ws://127.0.0.1:8765`; Primary reads each replica's durable
 position and replays only the missing, independently verified envelopes in order.
 
