@@ -87,6 +87,7 @@ location = /splitchain/rpc {
     proxy_pass http://splitchain-rpc:8089/rpc;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
+    proxy_set_header X-SplitChain-Client-IP $remote_addr;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_read_timeout 20s;

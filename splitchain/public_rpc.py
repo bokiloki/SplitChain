@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import os
 import time
@@ -18,6 +19,19 @@ class Gateway:
         self.capacity = asyncio.Semaphore(32)
         self.requests_by_ip: dict[str, tuple[float, int]] = {}
 
+    @staticmethod
+    def client_ip(socket: websockets.ServerConnection) -> str:
+        peer = socket.remote_address
+        source = peer[0] if peer else "unknown"
+        if os.environ.get("PUBLIC_RPC_TRUST_PROXY_IP") == "1":
+            forwarded = socket.request.headers.get("X-SplitChain-Client-IP")
+            if forwarded:
+                try:
+                    return str(ipaddress.ip_address(forwarded))
+                except ValueError:
+                    pass
+        return source
+
     async def handler(self, socket: websockets.ServerConnection) -> None:
         if socket.request.path != "/rpc":
             await socket.close(code=1008, reason="unknown endpoint")
@@ -31,8 +45,7 @@ class Gateway:
                         raise ValueError("only signed transfer methods are public")
                     if not isinstance(request.get("params"), dict) or not isinstance(request.get("auth"), dict):
                         raise TypeError("signed account request required")
-                    peer = socket.remote_address
-                    client_ip = peer[0] if peer else "unknown"
+                    client_ip = self.client_ip(socket)
                     now = time.monotonic()
                     started, count = self.requests_by_ip.get(client_ip, (now, 0))
                     if now - started >= 60:
