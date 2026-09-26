@@ -18,6 +18,19 @@ python3 -m venv .venv
 .venv/bin/python -m pytest -q
 ```
 
+For a disposable Docker rehearsal, use the draft branch on a test host:
+
+```sh
+docker compose -f compose.sandbox.rehearsal.yaml run --build --rm sandbox-rehearsal
+```
+
+This Compose job has no network interface, published ports, live testnet volumes,
+or persistent state. It runs as an unprivileged UID on a read-only filesystem;
+six independent stores live in a private temporary filesystem until the job exits.
+It checks the local protocol logic only. It does **not** deploy six running
+validators or exercise real peer delivery and recovery. Do not add this Compose
+file to the live testnet Compose invocation.
+
 The rehearsal creates six independent temporary stores. Three proposed
 colleague identities each have zero stake. The 7,000,000-unit genesis-locked
 reserve backs the three existing sample allocations; the required stake quorum

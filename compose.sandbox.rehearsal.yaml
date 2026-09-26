@@ -1,0 +1,18 @@
+services:
+  sandbox-rehearsal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: splitchain-sandbox-rehearsal:local
+    entrypoint: ["python", "-m", "splitchain.sandbox_rehearsal"]
+    command: ["--genesis", "/app/genesis.json", "--output", "/tmp/consensus"]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 256m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,mode=0700,uid=65532,gid=65532,size=64m
+    volumes:
+      - ./configs/testnet-genesis.json:/app/genesis.json:ro
