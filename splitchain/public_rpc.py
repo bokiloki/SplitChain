@@ -16,8 +16,7 @@ PUBLIC_METHODS = frozenset({"offer", "accept", "commit", "cancel"})
 class Gateway:
     def __init__(self) -> None:
         self.capacity = asyncio.Semaphore(32)
-        self.window_started = time.monotonic()
-        self.requests = 0
+        self.requests_by_ip: dict[str, tuple[float, int]] = {}
 
     async def handler(self, socket: websockets.ServerConnection) -> None:
         if socket.request.path != "/rpc":
@@ -32,12 +31,20 @@ class Gateway:
                         raise ValueError("only signed transfer methods are public")
                     if not isinstance(request.get("params"), dict) or not isinstance(request.get("auth"), dict):
                         raise TypeError("signed account request required")
+                    peer = socket.remote_address
+                    client_ip = peer[0] if peer else "unknown"
                     now = time.monotonic()
-                    if now - self.window_started >= 60:
-                        self.window_started, self.requests = now, 0
-                    self.requests += 1
-                    if self.requests > 120:
+                    started, count = self.requests_by_ip.get(client_ip, (now, 0))
+                    if now - started >= 60:
+                        started, count = now, 0
+                    self.requests_by_ip[client_ip] = (started, count + 1)
+                    if count + 1 > 120:
                         raise ValueError("gateway request limit reached")
+                    if len(self.requests_by_ip) > 1024:
+                        self.requests_by_ip = {
+                            ip: window for ip, window in self.requests_by_ip.items()
+                            if now - window[0] < 60
+                        }
                     response = await self.forward(request)
             except (TypeError, ValueError, TimeoutError) as exc:
                 response = {"id": None, "error": {"code": "INVALID_REQUEST", "message": str(exc)}}

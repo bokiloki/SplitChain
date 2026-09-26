@@ -42,6 +42,41 @@ def test_public_gateway_filters_methods_and_keeps_internal_leader_url_private(mo
     asyncio.run(scenario())
 
 
+def test_gateway_rate_limit_is_per_source_ip(monkeypatch):
+    class Socket:
+        request = type("Request", (), {"path": "/rpc"})()
+
+        def __init__(self, ip):
+            self.remote_address = (ip, 12345)
+            self.response = None
+
+        async def recv(self):
+            return json.dumps({"id": 1, "method": "offer", "params": {}, "auth": {}})
+
+        async def send(self, response):
+            self.response = json.loads(response)
+
+    async def scenario():
+        gateway = public_rpc.Gateway()
+
+        async def forward(request):
+            return {"id": request["id"], "result": {"ok": True}}
+
+        monkeypatch.setattr(gateway, "forward", forward)
+        for _ in range(120):
+            socket = Socket("192.0.2.1")
+            await gateway.handler(socket)
+            assert "result" in socket.response
+        blocked = Socket("192.0.2.1")
+        await gateway.handler(blocked)
+        assert blocked.response["error"]["message"] == "gateway request limit reached"
+        other = Socket("192.0.2.2")
+        await gateway.handler(other)
+        assert "result" in other.response
+
+    asyncio.run(scenario())
+
+
 def test_gateway_to_three_replicas_finalizes_sandbox_units(monkeypatch, tmp_path):
     async def scenario():
         secrets = {actor: (actor + "-" * 36) for actor in (

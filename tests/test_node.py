@@ -110,7 +110,7 @@ def test_authenticated_rpc_rejects_replay():
         accepted = await node.dispatch(request)
         replayed = await node.dispatch(request)
         assert "result" in accepted
-        assert replayed["error"]["message"] == "request nonce was already used"
+        assert replayed["error"]["message"] == "invalid request authentication"
     asyncio.run(scenario())
 
 
@@ -123,7 +123,7 @@ def test_authenticated_rpc_rejects_modified_payload():
         request["auth"] = RequestAuthenticator.sign(request, "alice", 1, "test-secret")
         request["params"]["value"] = 11
         rejected = await node.dispatch(request)
-        assert rejected["error"]["message"] == "invalid request signature"
+        assert rejected["error"]["message"] == "invalid request authentication"
     asyncio.run(scenario())
 
 
@@ -156,7 +156,7 @@ def test_replay_nonce_survives_restart(tmp_path):
         assert "result" in await first.dispatch(request)
         restarted = ReferenceNode(state_path=state, auth_secrets={"alice": "test-secret"})
         replayed = await restarted.dispatch(request)
-        assert replayed["error"]["message"] == "request nonce was already used"
+        assert replayed["error"]["message"] == "invalid request authentication"
     asyncio.run(scenario())
 
 
