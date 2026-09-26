@@ -1,0 +1,40 @@
+name: Android testnet APK
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android-wallet/**'
+      - '.github/workflows/android-testnet-apk.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Test and build
+        working-directory: android-wallet
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Name installable APK
+        run: cp android-wallet/app/build/outputs/apk/debug/app-debug.apk SplitChain-Testnet-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SplitChain-Testnet-debug-apk
+          path: SplitChain-Testnet-debug.apk
+          if-no-files-found: error
+      - name: Publish stable testnet download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view testnet-wallet-latest >/dev/null 2>&1 || gh release create testnet-wallet-latest --target "${GITHUB_SHA}" --title 'SplitChain testnet Android wallet' --notes 'Experimental, valueless testnet wallet. Debug APK for public sandbox testing; never use with assets of value.' --prerelease
+          gh release upload testnet-wallet-latest SplitChain-Testnet-debug.apk --clobber
