@@ -56,6 +56,11 @@ counterproofs, reserve rewards, production-certified nodes, or governance.
 The failover safety core requires two signed timeout votes at one committed position and uses
 monotonic terms with ordered succession. It prevents unilateral promotion in the model, but its
 heartbeat/vote transport and client redirection are not yet wired into the live node process.
+The reference node now persists verified leadership certificates alongside its ledger and
+replication position. A node that has recorded a successor certificate fences further Primary
+replication and discards an uncommitted prepared mutation. Certificate receipt is currently
+an internal operation: no network certificate transport or automatic promotion is exposed.
+This does not provide unattended failover or authorize the successor to process client writes.
 
 `splitd` defaults to loopback. Do not expose it publicly or use it with assets.
 
