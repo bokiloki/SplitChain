@@ -18,7 +18,7 @@ def test_happy_path_finalizes_after_three_rounds():
 
 
 def test_branch_allows_only_one_commit():
-    ledger = Ledger({"alice": 100})
+    ledger = Ledger({"alice": 100, "bob": 0})
     branch = ledger.offer("alice", "bob", 10)
     ledger.accept(branch.branch_id, "bob")
     ledger.commit(branch.branch_id, "alice", {"payment": 10})
@@ -33,7 +33,7 @@ def test_equal_stake_and_value_are_required_by_construction():
 
 
 def test_uncommitted_branch_expires_and_unlocks():
-    ledger = Ledger({"alice": 100})
+    ledger = Ledger({"alice": 100, "bob": 0})
     branch = ledger.offer("alice", "bob", 10, ttl=3)
     ledger.advance(3)
     assert branch.state == BranchState.EXPIRED
@@ -68,7 +68,7 @@ def test_protocol_hashes_are_canonical_and_domain_separated():
 
 
 def test_non_finite_json_commit_is_rejected():
-    ledger = Ledger({"alice": 100})
+    ledger = Ledger({"alice": 100, "bob": 0})
     branch = ledger.offer("alice", "bob", 10)
     ledger.accept(branch.branch_id, "bob")
 
@@ -88,7 +88,7 @@ def test_snapshot_round_trip_preserves_committed_branch():
 
 
 def test_snapshot_rejects_locked_fund_tampering():
-    ledger = Ledger({"alice": 100})
+    ledger = Ledger({"alice": 100, "bob": 0})
     ledger.offer("alice", "bob", 10)
     snapshot = ledger.snapshot()
     snapshot["locked"]["alice"] = 1

@@ -122,6 +122,10 @@ def test_gateway_to_three_replicas_finalizes_sandbox_units(monkeypatch, tmp_path
                                     auth_secrets=secrets, node_id="primary",
                                     role="primary", cluster_secret=cluster_secret,
                                     peer_urls={"secondary": s_url, "tertiary": t_url})
+            registration = {"id": "enroll-bob", "method": "account.register", "params": {"account": "bob"}}
+            registration["auth"] = RequestAuthenticator.sign(
+                registration, "testnet_operator", 1, secrets["testnet_operator"])
+            assert "result" in await primary.dispatch(registration)
             async with websockets.serve(primary.handler, "127.0.0.1", 0) as p_server:
                 p_url = f"ws://127.0.0.1:{p_server.sockets[0].getsockname()[1]}"
                 monkeypatch.setattr(public_rpc, "BACKENDS", (p_url, s_url, t_url))

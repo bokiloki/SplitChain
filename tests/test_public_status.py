@@ -28,6 +28,11 @@ def test_public_endpoint_restricts_methods_and_paths(monkeypatch):
     try:
         with urlopen(url + "/") as response:
             assert b"Join with a pinned genesis" in response.read()
+        with urlopen(url + "/create-wallet") as response:
+            page = response.read()
+            assert response.headers.get("Cache-Control") == "no-store"
+            assert b"crypto.getRandomValues" in page
+            assert b"operator must approve" in page
         with urlopen(url + "/downloads") as response:
             downloads = response.read()
             assert response.headers.get_content_type() == "text/html"

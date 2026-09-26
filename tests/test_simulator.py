@@ -12,7 +12,7 @@ def test_simulation_is_deterministic():
 
 
 def test_simulator_rejects_unrecognized_branch_origin():
-    ledger = Ledger({"alice": 100})
+    ledger = Ledger({"alice": 100, "bob": 0})
     branch = ledger.offer("alice", "bob", 10)
     branch.origin_digest = "00" * 32
 

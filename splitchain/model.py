@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
@@ -123,6 +124,20 @@ class Ledger:
 
     def available(self, account: str) -> int:
         return self.balances.get(account, 0) - self.locked.get(account, 0)
+
+    def register_account(self, account: str) -> dict:
+        """Add an approved, initially empty account to the canonical ledger."""
+        if (not isinstance(account, str) or not re.fullmatch(r"[a-z][a-z0-9_]{2,31}", account)
+                or account.startswith("testnet_") or account in self.balances):
+            raise ProtocolError("invalid or existing account")
+        self.balances[account] = 0
+        self.canonical_height += 1
+        self.canonical_digest = protocol_digest("splitchain/canonical-block/v1", {
+            "account": account, "height": self.canonical_height,
+            "parent": self.canonical_digest, "type": "account.register",
+        })
+        self.canonical_history[self.canonical_height] = self.canonical_digest
+        return {"account": account, "height": self.canonical_height}
 
     def offer(self, sender: str, receiver: str, value: int, ttl: int = 6) -> Branch:
         if self.genesis and sender in self.genesis.locked_accounts:
