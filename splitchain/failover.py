@@ -206,8 +206,8 @@ class LeadershipState:
         candidate["last_heartbeat_tick"] = certificate.votes[0].observed_tick
         candidate["certificates"].append(asdict(certificate))
         verified = self.from_snapshot(self.authority, candidate)
-        if verified.last_heartbeat_tick < self.last_heartbeat_tick:
-            raise ProtocolError("leadership certificate regresses heartbeat time")
+        # A fenced leader can keep advancing its local heartbeat after the
+        # majority has certified a successor. The certified term wins.
         self.term = verified.term
         self.leader = verified.leader
         self.last_heartbeat_tick = verified.last_heartbeat_tick

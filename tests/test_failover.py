@@ -129,6 +129,21 @@ def test_follower_accepts_certified_transition_once():
     assert follower.snapshot() == leader.snapshot()
 
 
+def test_stale_primary_adopts_majority_certificate_after_local_heartbeat():
+    authority = FailoverAuthority(KEYS)
+    majority = LeadershipState(authority)
+    majority.submit(vote(authority, "secondary", tick=4))
+    certificate = majority.submit(vote(authority, "tertiary", tick=4))
+
+    stale_primary = LeadershipState(authority)
+    stale_primary.heartbeat("primary", 0, tick=7, committed_nonce=0)
+    stale_primary.accept_certificate(certificate)
+
+    assert stale_primary.leader == "secondary"
+    assert stale_primary.term == 1
+    assert LeadershipState.from_snapshot(authority, stale_primary.snapshot()).leader == "secondary"
+
+
 def test_follower_rejects_certificate_before_catching_up():
     authority = FailoverAuthority(KEYS)
     leader = LeadershipState(authority)
