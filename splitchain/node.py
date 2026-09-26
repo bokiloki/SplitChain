@@ -150,6 +150,20 @@ class ReferenceNode:
                     "node_id": self.node_id,
                     "nonce": self._committed_position(),
                 }}
+            if method == "replica.history":
+                if not self.replication or not self.leadership:
+                    raise ProtocolError("replication history is not configured")
+                async with self._lock:
+                    position = self._committed_position()
+                    start = params.get("from", -1)
+                    if (type(start) is not int or start < 0 or start > position
+                            or len(self.replication_log) != position):
+                        raise ProtocolError("invalid or incomplete replication history")
+                    return {"id": request_id, "result": {
+                        "node_id": self.node_id, "nonce": position,
+                        "entries": self.replication_log[start:start + 10],
+                        "ledger_digest": self._ledger_digest(),
+                    }}
             if method == "cluster.heartbeat":
                 result = await self.receive_heartbeat(params)
                 return {"id": request_id, "result": result}
@@ -347,13 +361,13 @@ class ReferenceNode:
             return
         if state.leader == "tertiary" or self.node_id != state._successor():
             return
-        if (tick - state.last_heartbeat_tick < state.timeout_ticks
-                or self.replication_pending is not None
-                or len(self.replication_log) != self._committed_position()):
+        if tick - state.last_heartbeat_tick < state.timeout_ticks:
             return
         witness = next(role for role in ROLE_ORDER if role not in {state.leader, self.node_id})
         witness_url = self.peer_urls.get(witness)
         if not witness_url:
+            return
+        if not await self._reconcile_with_witness(witness_url):
             return
         # Recover a certificate the witness persisted if its acknowledgement was lost.
         remote = await self._replica_rpc(witness_url, "cluster.leadership", {})
@@ -529,6 +543,65 @@ class ReferenceNode:
             if not prepared or "result" not in prepared or not committed or "result" not in committed:
                 return False
         return True
+
+    async def _sync_from_peer(self, url: str) -> bool:
+        """Recover only independently signed committed entries from a full peer log."""
+        for _ in range(10):
+            local_position = self._committed_position()
+            response = await self._replica_rpc(url, "replica.history", {"from": local_position})
+            if not response or "result" not in response:
+                return False
+            remote = response["result"]
+            try:
+                remote_position = int(remote["nonce"])
+                entries = remote["entries"]
+                digest = remote["ledger_digest"]
+            except (KeyError, TypeError, ValueError):
+                return False
+            if remote_position < local_position or not isinstance(entries, list):
+                return False
+            if remote_position == local_position:
+                return digest == self._ledger_digest() and self.replication_pending is None
+            if not entries:
+                return False
+            for envelope in entries:
+                if self.replication_pending is not None and self.replication_pending != envelope:
+                    return False
+                try:
+                    if self.replication_pending is None:
+                        await self.prepare_replica(envelope)
+                    await self.commit_replica(envelope)
+                except (ProtocolError, TypeError):
+                    return False
+        return False
+
+    async def _reconcile_with_witness(self, url: str) -> bool:
+        remote = await self._replica_rpc(url, "replica.position", {})
+        if not remote or "result" not in remote:
+            return False
+        try:
+            remote_position = int(remote["result"]["nonce"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        if remote_position > self._committed_position():
+            if not await self._sync_from_peer(url):
+                return False
+        elif self.replication_pending is not None:
+            # Neither survivor has a committed decision for the prepared record.
+            return False
+        if (self.replication_pending is not None
+                or len(self.replication_log) != self._committed_position()):
+            return False
+        if remote_position < self._committed_position() and not await self._sync_history(url):
+            return False
+        confirmed = await self._replica_rpc(url, "replica.history", {
+            "from": self._committed_position()
+        })
+        return bool(
+            confirmed and "result" in confirmed
+            and confirmed["result"].get("nonce") == self._committed_position()
+            and confirmed["result"].get("ledger_digest") == self._ledger_digest()
+        )
 
     async def _sync_and_prepare(self, url: str, envelope: dict) -> bool:
         if not await self._sync_history(url):
