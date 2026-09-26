@@ -1,0 +1,10 @@
+{
+  "schema": "splitchain-genesis/v1",
+  "network_id": "splitchain-public-testnet-candidate-1",
+  "max_supply": 21000000,
+  "allocations": {
+    "testnet_faucet": 14000000,
+    "testnet_locked_reserve": 7000000
+  },
+  "locked_accounts": ["testnet_locked_reserve"]
+}

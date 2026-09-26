@@ -35,9 +35,12 @@ different network identifier and genesis from mainnet.
 ## Proposed coin allocation to specify and test
 
 The intended **mainnet** maximum is 21,000,000 units. The proposed one-third
-reserve/lock is **7,000,000 units**. This is a design decision to formalize before
-testnet; the repository does not yet enforce a 21,000,000 cap or instantiate that
-reserve. Recording the allocation now does not create, sell, or distribute coins.
+reserve/lock is **7,000,000 units**. The candidate *valueless testnet* genesis
+in `configs/testnet-genesis.json` encodes a 21,000,000 maximum, allocates
+14,000,000 to `testnet_faucet`, and permanently freezes 7,000,000 in
+`testnet_locked_reserve`. The ledger checks total initial supply, transfer
+conservation, and the reserve on restore. This does not instantiate any mainnet
+allocation or create, sell, or distribute real-value coins.
 
 Before T1 closes, define the exact genesis recipients and amounts (including the
 remaining 14,000,000 units), vesting/unlock schedule, signing authority, reserve
@@ -50,7 +53,8 @@ separate valueless units; copying balances to mainnet requires a new explicit de
 
 1. Harden the research failover with recovery from unresolved prepares and partitions,
    cross-host clock/identity design, replica catch-up, and three-node restart trials.
-2. Draft the issuance/genesis RFC and add supply-cap tests before a testnet genesis.
+2. Review and sign off the candidate testnet genesis; draft the separate mainnet
+   issuance/genesis RFC and allocation policy.
 3. Replace the shared cluster secret with distinct node identities and encrypted
    authenticated transport; exercise partitions and compromised-node scenarios.
 4. Package lightweight independent-node deployment, observability, faucet, and
