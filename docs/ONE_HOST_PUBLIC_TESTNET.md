@@ -69,105 +69,68 @@ To exercise failover, stop Primary, observe the leadership view on Secondary,
 then restart Primary and compare ledger heads. Keep all state and logs if nodes
 disagree. With all nodes on one host, a host crash stops the whole cluster.
 
-## HTTPS: existing Nginx or bundled Caddy
+## Public HTTPS path on the existing Nginx host
 
-When the existing Nginx container uses Docker's external `public-proxy` network,
-the public Compose overlay attaches `status` and `rpc` to that network with the
-stable aliases `splitchain-status` and `splitchain-rpc`. Create `public-proxy`
-once if needed with `docker network create public-proxy`; the IoT Nginx service
-must also join it. Compose preserves these connections when the SplitChain
-containers are recreated. Proxy `/splitchain/` to `splitchain-status:8080`
-(strip the `/splitchain/` prefix), and `/splitchain/rpc` to
-`splitchain-rpc:8089/rpc` with WebSocket upgrade headers. Reload the existing
-Nginx container after updating its configuration.
-
-If Nginx already owns ports 80/443 on your server, add these locations **inside
-the HTTPS server block for `bokiloki.ddns.net` and reload Nginx.
-If that hostname already serves another website, save its existing configuration
-before replacing its root route. Keep its
-existing certificate renewal and HTTP-to-HTTPS redirect. The upstream binds
-to loopback only; these exact paths are the only public ones:
+The public entry point is **https://bokiloki.ddns.net/splitchain/**. The
+SplitChain `status` and `rpc` services join the external Docker network
+`public-proxy`. Attach the existing Nginx service to the same network; create
+it once with `docker network create public-proxy` if it does not exist.
+Keep the existing `bokiloki.ddns.net` TLS certificate, HTTPS redirect, and
+other Nginx locations. Add these locations inside its existing HTTPS server
+block (before other broad `/splitchain/` rules):
 
 ```nginx
-location = / {
-    proxy_pass http://127.0.0.1:8088/;
+location = /splitchain {
+    return 301 /splitchain/;
 }
-location = /.well-known/splitchain-testnet.json {
-    proxy_pass http://127.0.0.1:8088/.well-known/splitchain-testnet.json;
-}
-location = /genesis.json {
-    proxy_pass http://127.0.0.1:8088/genesis.json;
-}
-location = /status {
-    proxy_pass http://127.0.0.1:8088/status;
-}
-location = /leadership {
-    proxy_pass http://127.0.0.1:8088/leadership;
-}
-```
-
-Then request `https://bokiloki.ddns.net/`. For a **dedicated testnet
-hostname** on a server with free ports 80/443, set `PUBLIC_TESTNET_DOMAIN` and
-start the bundled Caddy profile instead:
-
-```bash
-docker compose --env-file .env.single-host --profile caddy \
-  -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml up -d --build
-```
-
-Caddy obtains and renews a public certificate for the configured hostname.
-Check `https://bokiloki.ddns.net/` and
-`https://bokiloki.ddns.net/.well-known/splitchain-testnet.json`.
-Do not start the Caddy profile while
-Nginx is bound to 80/443; use the existing Nginx configuration above.
-
-When using Nginx, also add this exact WebSocket location in the same HTTPS
-server block:
-
-```nginx
-location = /rpc {
-    proxy_pass http://127.0.0.1:8089/rpc;
+location = /splitchain/rpc {
+    proxy_pass http://splitchain-rpc:8089/rpc;
     proxy_http_version 1.1;
+    proxy_set_header Host $host;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
-    proxy_read_timeout 15s;
+    proxy_read_timeout 20s;
+}
+location /splitchain/ {
+    proxy_pass http://splitchain-status:8080/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }
 ```
 
-The root URL is the **human-facing genesis entry point**. Clients discover the
-machine-readable manifest at `/.well-known/splitchain-testnet.json` and verify
-`/genesis.json` against the copy shipped in this repository:
+The trailing slash in the status `proxy_pass` removes the `/splitchain/`
+prefix. Keep the RPC location separate because it must upgrade to WebSocket.
+Reload the existing Nginx container after validating its configuration.
+The nodes and status/RPC loopback bindings need **no WAN port forwarding**.
 
 ```bash
-scplit join-testnet --url https://bokiloki.ddns.net/ \
+curl -fsS https://bokiloki.ddns.net/splitchain/
+curl -fsS https://bokiloki.ddns.net/splitchain/downloads
+curl -fsS https://bokiloki.ddns.net/splitchain/wallet.js
+curl -fsS https://bokiloki.ddns.net/splitchain/.well-known/splitchain-testnet.json
+curl -fsS https://bokiloki.ddns.net/splitchain/status
+scplit join-testnet --url https://bokiloki.ddns.net/splitchain/ \
   --genesis configs/testnet-genesis.json
 ```
 
-Joining as a validator also requires a separately approved signing identity,
-TLS peer registry, and independent-host setup; the URL alone does not grant
-consensus membership. Check the [independent node guide](INDEPENDENT_NODES.md).
+The browser wallet and Android APK link appear on the Downloads page. The
+browser wallet uses `wss://bokiloki.ddns.net/splitchain/rpc`. The public
+status endpoint is read-only; only signed `offer`, `accept`, `commit`, and
+`cancel` requests pass the RPC gateway. Opening the bootstrap page alone
+does not enroll a consensus validator.
 
-For a test transfer, the operator places each actor's secret alone in a private
-`0600` file and gives it to that actor. Use unique, increasing nonces for each
-actor. These examples use `/rpc` on the dedicated hostname:
+## Enroll and fund a tester
 
-```bash
-# Run on the server with umask 077; this prints no secret to the terminal.
-sudo python3 -c 'import json; print(json.load(open("/srv/splitchain-testnet/accounts.json"))["testnet_faucet"])' > faucet.secret
-sudo python3 -c 'import json; print(json.load(open("/srv/splitchain-testnet/accounts.json"))["bob"])' > bob.secret
-```
-
-Distribute `bob.secret` only to Bob. Generate separate files for other actors.
-
-To enroll another tester, provision a new account credential. The script refuses
-to overwrite an account or credential. Because nodes mount a specific registry
-file inode, briefly stop them and recreate their containers after each registry
-update so all three read the same file:
+The operator must first issue one private credential per participant. Use the
+provisioning script that writes a mode-0600 secret file, **never** send
+`accounts.json` to anyone. Because the registry is bind mounted by inode,
+stop and recreate the three nodes and the round driver after enrollment:
 
 ```bash
 sudo python3 scripts/add_testnet_account.py \
-  /srv/splitchain-testnet/accounts.json charlie \
-  /srv/splitchain-testnet/charlie.secret
+  /srv/splitchain-testnet/accounts.json tester_alice \
+  /srv/splitchain-testnet/tester_alice.secret
 docker compose --env-file .env.single-host \
   -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml \
   stop primary secondary tertiary rounds
@@ -176,27 +139,31 @@ docker compose --env-file .env.single-host \
   up -d --force-recreate primary secondary tertiary rounds
 ```
 
-Give only `charlie.secret` to Charlie. The operator can then fund `charlie` by
-making a signed `offer` from `testnet_faucet`; Charlie signs `accept`, and the
-operator signs `commit`. No participant gets a claim on future mainnet coins.
-Never send `accounts.json` to clients.
+Privately give Alice her account ID `tester_alice` and the contents of **only**
+`tester_alice.secret`. She enters them into the Android or browser wallet,
+then shares her account ID. The operator funds her from the faucet with a
+signed offer, Alice refreshes and taps **Accept**, and the operator refreshes
+and taps **Commit**. The round driver advances three finality rounds before
+her received balance becomes spendable. Example operator commands (keep
+`faucet.secret` private):
 
 ```bash
-scplit rpc offer --url wss://YOUR_TESTNET_DOMAIN/rpc \
-  --params '{"sender":"testnet_faucet","receiver":"bob","value":10}' \
-  --actor testnet_faucet --secret-file ./faucet.secret --nonce 1
-scplit rpc accept --url wss://YOUR_TESTNET_DOMAIN/rpc \
-  --params '{"branch_id":"BRANCH_ID_FROM_OFFER","receiver":"bob"}' \
-  --actor bob --secret-file ./bob.secret --nonce 1
-scplit rpc commit --url wss://YOUR_TESTNET_DOMAIN/rpc \
-  --params '{"branch_id":"BRANCH_ID_FROM_OFFER","sender":"testnet_faucet","payload":{"memo":"sandbox"}}' \
-  --actor testnet_faucet --secret-file ./faucet.secret --nonce 2
+umask 077
+sudo python3 -c 'import json; print(json.load(open("/srv/splitchain-testnet/accounts.json"))["testnet_faucet"])' > faucet.secret
+FAUCET_NONCE=$(date +%s%3N)
+scplit rpc offer --url wss://bokiloki.ddns.net/splitchain/rpc \
+  --params '{"sender":"testnet_faucet","receiver":"tester_alice","value":10}' \
+  --actor testnet_faucet --secret-file ./faucet.secret --nonce "$FAUCET_NONCE"
+# Copy branch_id from the offer result. Wait until Alice accepts it.
+scplit rpc commit --url wss://bokiloki.ddns.net/splitchain/rpc \
+  --params '{"branch_id":"BRANCH_ID_FROM_OFFER","sender":"testnet_faucet","payload":{}}' \
+  --actor testnet_faucet --secret-file ./faucet.secret --nonce "$((FAUCET_NONCE + 1))"
 ```
 
-The private round driver signs `advance` requests as `testnet_operator`. It
-persists its next nonce before submission, so restarting it does not reuse an
-earlier authorization. Check its logs and all three nodes' ledger heads if
-finality stalls. The public gateway excludes `advance` and `cluster.sync`.
+Use a nonce **greater** than any previously accepted nonce for this account;
+choose a current millisecond timestamp if uncertain. The app reserves one
+before each request. The round driver persists its own nonce across restarts.
+A separate phone does not become a consensus validator by using the wallet.
 
 ## MikroTik RB4011: WAN ports
 

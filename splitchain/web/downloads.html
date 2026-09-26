@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#081623">
+  <title>Downloads · SplitChain Testnet</title>
+  <style>
+    :root { color-scheme:dark; --ink:#e7f3f5; --muted:#a2bac2; --line:#254451; --accent:#69e5c5; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:radial-gradient(circle at 80% 0,#174753,transparent 45%),#081723; font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif; }
+    .wrap { width:min(920px,calc(100% - 40px)); margin:auto; }
+    header { border-bottom:1px solid var(--line); background:#071723ba; }
+    .nav { display:flex; justify-content:space-between; align-items:center; min-height:68px; gap:20px; }
+    .brand { font-size:1.08rem; letter-spacing:.04em; font-weight:800; color:var(--ink); text-decoration:none; }
+    .brand span,.eyebrow { color:var(--accent); }
+    nav { display:flex; flex-wrap:wrap; gap:18px; }
+    nav a { color:var(--muted); text-decoration:none; font-size:.9rem; }
+    a { color:var(--accent); }
+    a:hover { color:#c8fff0; }
+    main { padding:74px 0 90px; }
+    .eyebrow { text-transform:uppercase; font-size:.76rem; letter-spacing:.18em; font-weight:750; }
+    h1 { font-size:clamp(2.8rem,7vw,4.8rem); letter-spacing:-.055em; line-height:1.05; margin:12px 0 20px; }
+    h2 { font-size:1.5rem; margin:0 0 10px; }
+    p,li { color:var(--muted); }
+    .lead { font-size:1.13rem; max-width:680px; }
+    .cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin:32px 0; }
+    .card { background:#102837d9; border:1px solid var(--line); border-radius:14px; padding:24px; }
+    .button { display:inline-block; background:var(--accent); color:#082329; font-weight:750; text-decoration:none; padding:12px 18px; border-radius:10px; margin:7px 0; }
+    .button:hover { color:#082329; background:#b3ffea; }
+    .button.secondary { background:transparent; border:1px solid #5b8790; color:var(--ink); }
+    .note { border:1px solid #8b7545; color:#f9dca6; background:#7a571c2b; padding:15px 18px; border-radius:12px; margin:30px 0; }
+    ol { padding-left:24px; }
+    li { margin:12px 0; }
+    code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; color:#b5fff0; }
+    footer { border-top:1px solid var(--line); padding:26px 0; color:var(--muted); font-size:.88rem; }
+    @media(max-width:680px) { .cards { grid-template-columns:1fr; } .nav { align-items:flex-start; flex-direction:column; padding:15px 0; gap:8px; } main { padding-top:44px; } }
+  </style>
+</head>
+<body>
+  <header><div class="wrap nav"><a class="brand" href="__SPLITCHAIN_BASE__">SPLIT<span>CHAIN</span></a><nav aria-label="Main navigation"><a href="__SPLITCHAIN_BASE__">Network</a><a href="__SPLITCHAIN_BASE__#wallet">Browser wallet</a><a href="__SPLITCHAIN_BASE__explore/nodes">Node status</a><a href="https://github.com/bokiloki/SplitChain">Source ↗</a></nav></div></header>
+  <main class="wrap">
+    <div class="eyebrow">Public sandbox · downloads</div>
+    <h1>Try SplitChain<br>on your device</h1>
+    <p class="lead">The Android app and browser wallet connect to the same pinned public testnet. Test units are valueless and may be reset.</p>
+    <div class="cards">
+      <section class="card"><h2>Android APK</h2><p>Install the experimental testnet wallet on Android 8.0 or newer. It checks the published genesis and stores your private credential with Android Keystore.</p><a class="button" href="https://github.com/bokiloki/SplitChain/releases/download/testnet-wallet-latest/SplitChain-Testnet-debug.apk">Download SplitChain Testnet APK ↗</a><p><small>This is an installable debug APK. Check the <a href="https://github.com/bokiloki/SplitChain/releases/tag/testnet-wallet-latest">GitHub release</a> and <a href="https://github.com/bokiloki/SplitChain/releases/download/testnet-wallet-latest/SHA256SUMS.txt">APK SHA-256 checksum</a> and <a href="https://github.com/bokiloki/SplitChain/actions/workflows/android-testnet-apk.yml">build results</a> before installing. It is not a Play Store app.</small></p></section>
+      <section class="card"><h2>Use the browser</h2><p>No installation needed. The browser wallet signs transfers in the current tab; its credential is not saved in browser storage. Use a trusted device and disconnect when finished.</p><a class="button secondary" href="__SPLITCHAIN_BASE__#wallet">Open browser wallet →</a><p><small>Both wallets support offer, accept and commit. A sender must have the amount plus equal temporary stake available.</small></p></section>
+    </div>
+    <div class="note"><strong>Testnet only.</strong> These units have no monetary value and do not represent future mainnet coins. A debug APK can be signed with a different key on each build; a later APK may require uninstalling the old app. Back up your account credential privately before uninstalling, because the app does not export it.</div>
+    <h2>Give a tester access</h2>
+    <ol><li>The operator creates one account per tester, then privately gives that person its account ID and 64-character hex credential. <strong>Never publish the credential.</strong> See the <a href="https://github.com/bokiloki/SplitChain/blob/main/docs/ONE_HOST_PUBLIC_TESTNET.md">operator setup and funding instructions</a>.</li>
+      <li>The tester downloads the APK or opens the browser wallet, enters the assigned credential, and shares only the public account ID.</li>
+      <li>The operator funds that ID from the testnet faucet. The tester refreshes and accepts the pending offer; the operator commits it. After finality rounds, the balance becomes available.</li>
+      <li>To try a transfer between testers, the sender makes an offer, the recipient accepts, and the sender commits. Refresh after each step to see its status.</li></ol>
+    <p>Network bootstrap: <a href="__SPLITCHAIN_BASE__.well-known/splitchain-testnet.json"><code>__SPLITCHAIN_BASE__.well-known/splitchain-testnet.json</code></a>. You can also <a href="__SPLITCHAIN_BASE__explore/status">inspect the live ledger</a>.</p>
+  </main>
+  <footer><div class="wrap">SplitChain research sandbox · <a href="https://github.com/bokiloki/SplitChain/issues">Report an issue ↗</a></div></footer>
+</body>
+</html>

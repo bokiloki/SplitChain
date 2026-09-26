@@ -40,7 +40,7 @@ final class WalletStore {
             throw new IllegalArgumentException("Enter an account ID and its 64-character hex credential");
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE, key());
-        byte[] encoded = cipher.doFinal(secret.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        byte[] encoded = cipher.doFinal(secret.toLowerCase(java.util.Locale.ROOT).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         preferences.edit().putString("account", account)
                 .putString("secret", Base64.encodeToString(encoded, Base64.NO_WRAP))
                 .putString("iv", Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))

@@ -91,7 +91,7 @@
     const secret = $('wallet-credential').value.trim();
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(actor) || !/^[0-9a-fA-F]{64}$/.test(secret)) throw Error('Enter your issued account ID and 64-character hex credential');
     await verify();
-    key = await crypto.subtle.importKey('raw', encoder.encode(secret), {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
+    key = await crypto.subtle.importKey('raw', encoder.encode(secret.toLowerCase()), {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
     $('wallet-credential').value = '';
     account = actor;
     $('wallet-id').textContent = actor;
