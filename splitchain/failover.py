@@ -5,8 +5,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 
 from .model import ProtocolError, canonical_json
+
+if TYPE_CHECKING:
+    from .node_identity import NodeKeyring
 
 ROLE_ORDER = ("primary", "secondary", "tertiary")
 
@@ -41,10 +45,35 @@ class LeadershipCertificate:
 
 
 class FailoverAuthority:
-    def __init__(self, node_keys: dict[str, str]) -> None:
-        if set(node_keys) != set(ROLE_ORDER) or any(len(key) < 32 for key in node_keys.values()):
+    def __init__(
+        self, node_keys: dict[str, str] | None = None, *, keyring: NodeKeyring | None = None
+    ) -> None:
+        if (node_keys is None) == (keyring is None):
+            raise ProtocolError("choose one failover identity scheme")
+        if node_keys is not None and (
+            set(node_keys) != set(ROLE_ORDER) or any(len(key) < 32 for key in node_keys.values())
+        ):
             raise ProtocolError("failover requires a strong key for every ordered role")
-        self._keys = {node: key.encode() for node, key in node_keys.items()}
+        self._keys = {node: key.encode() for node, key in (node_keys or {}).items()}
+        self._keyring = keyring
+
+    def _sign(self, role: str, payload: dict) -> str:
+        if self._keyring:
+            return self._keyring.sign(role, canonical_json(payload))
+        try:
+            key = self._keys[role]
+        except KeyError as exc:
+            raise ProtocolError("unknown failover voter") from exc
+        return hmac.new(key, canonical_json(payload), hashlib.sha256).hexdigest()
+
+    def _verify(self, role: str, payload: dict, signature: str) -> bool:
+        if self._keyring:
+            return self._keyring.verify(role, canonical_json(payload), signature)
+        key = self._keys.get(role)
+        if not key:
+            return False
+        expected = hmac.new(key, canonical_json(payload), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, signature)
 
     def vote(
         self,
@@ -63,30 +92,17 @@ class FailoverAuthority:
             "term": term,
             "voter": voter,
         }
-        try:
-            signature = hmac.new(
-                self._keys[voter], canonical_json(unsigned), hashlib.sha256
-            ).hexdigest()
-        except KeyError as exc:
-            raise ProtocolError("unknown failover voter") from exc
+        signature = self._sign(voter, unsigned)
         return FailureVote(signature=signature, **unsigned)
 
     def verify(self, vote: FailureVote) -> bool:
-        key = self._keys.get(vote.voter)
-        if not key:
-            return False
-        expected = hmac.new(key, canonical_json(vote.unsigned()), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(expected, vote.signature)
+        return self._verify(vote.voter, vote.unsigned(), vote.signature)
 
     def sign_heartbeat(self, leader: str, term: int, tick: int, nonce: int) -> dict:
         payload = {"leader": leader, "term": term, "tick": tick, "nonce": nonce}
-        try:
-            key = self._keys[leader]
-        except KeyError as exc:
-            raise ProtocolError("unknown heartbeat leader") from exc
         return {
             **payload,
-            "signature": hmac.new(key, canonical_json(payload), hashlib.sha256).hexdigest(),
+            "signature": self._sign(leader, payload),
         }
 
     def verify_heartbeat(self, envelope: dict) -> bool:
@@ -94,9 +110,7 @@ class FailoverAuthority:
             leader = envelope["leader"]
             payload = {key: envelope[key] for key in ("leader", "term", "tick", "nonce")}
             signature = envelope["signature"]
-            key = self._keys[leader]
-            expected = hmac.new(key, canonical_json(payload), hashlib.sha256).hexdigest()
-            return hmac.compare_digest(expected, signature)
+            return self._verify(leader, payload, signature)
         except (KeyError, TypeError, ValueError):
             return False
 

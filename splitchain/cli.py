@@ -9,6 +9,7 @@ import uuid
 from dataclasses import asdict
 
 from .ecosystem import Ecosystem
+from .node_identity import generate_node_key
 from .simulator import run
 from .transport import TLSMaterial
 
@@ -76,12 +77,19 @@ def main() -> None:
     call.add_argument("--tls-ca", help="PEM certificate authority used to verify the server")
 
     sub.add_parser("ecosystem-demo", help="run an in-process application-to-node demonstration")
+    keygen = sub.add_parser("keygen", help="create one node signing key on its host")
+    keygen.add_argument("--role", required=True, choices=("primary", "secondary", "tertiary"))
+    keygen.add_argument("--output", required=True, help="new private PEM file, never overwritten")
 
     args = parser.parse_args()
     if args.command == "simulate":
         print(json.dumps(asdict(run(args.seed, args.steps, args.accounts)), indent=2))
     elif args.command == "ecosystem-demo":
         print(json.dumps(Ecosystem().demo(), indent=2))
+    elif args.command == "keygen":
+        print(json.dumps({"role": args.role, "public_key": generate_node_key(
+            args.role, args.output
+        )}, indent=2))
     else:
         params = json.loads(args.params)
         if not isinstance(params, dict):

@@ -24,6 +24,7 @@ from .failover import (
     LeadershipState,
 )
 from .model import Ledger, ProtocolError, canonical_json
+from .node_identity import NodeKeyring
 from .persistence import LedgerStore
 from .replication import ReplicationAuthenticator
 from .transport import PeerIdentity, PeerRegistry, TLSMaterial
@@ -67,6 +68,8 @@ class ReferenceNode:
         peer_urls: dict[str, str] | None = None,
         role: str = "standalone",
         cluster_secret: str | None = None,
+        keyring: NodeKeyring | None = None,
+        tls: TLSMaterial | None = None,
     ) -> None:
         initial = balances or {"alice": 1_000, "bob": 1_000}
         self.store = LedgerStore(state_path) if state_path else None
@@ -75,7 +78,15 @@ class ReferenceNode:
         self.node_id = node_id
         self.peer_urls = dict(peer_urls or {})
         self.role = role
-        self.replication = ReplicationAuthenticator(cluster_secret) if cluster_secret else None
+        if keyring and cluster_secret:
+            raise ProtocolError("cannot combine node keys with a shared cluster secret")
+        if keyring and (node_id != role or keyring.role != role):
+            raise ProtocolError("node identity must match its configured role")
+        self.replication = (
+            ReplicationAuthenticator(cluster_secret, keyring=keyring)
+            if cluster_secret or keyring else None
+        )
+        self._peer_ssl = tls.client_context() if tls else None
         self.replication_nonces: dict[str, int] = {}
         self.replication_log: list[dict] = []
         self.replication_pending: dict | None = None
@@ -92,13 +103,16 @@ class ReferenceNode:
         self.leadership: LeadershipState | None = None
         if self.replication and self.role in ROLE_ORDER:
             # Research-only derived keys: replace the shared secret with independent node keys.
-            keys = {
-                role: hashlib.sha256(
-                    f"splitchain/failover/v1:{role}:{cluster_secret}".encode()
-                ).hexdigest()
-                for role in ROLE_ORDER
-            }
-            authority = FailoverAuthority(keys)
+            if keyring:
+                authority = FailoverAuthority(keyring=keyring)
+            else:
+                keys = {
+                    role: hashlib.sha256(
+                        f"splitchain/failover/v1:{role}:{cluster_secret}".encode()
+                    ).hexdigest()
+                    for role in ROLE_ORDER
+                }
+                authority = FailoverAuthority(keys)
             saved = self.store.load_leadership_snapshot() if self.store else None
             self.leadership = (
                 LeadershipState.from_snapshot(authority, saved)
@@ -133,6 +147,17 @@ class ReferenceNode:
         method = request.get("method")
         params = request.get("params", {})
         try:
+            if not isinstance(params, dict):
+                raise ProtocolError("params must be an object")
+            if peer_identity:
+                peer_identity.authorize(method)
+                if method == "cluster.heartbeat" and params.get("leader") != peer_identity.node_id:
+                    raise ProtocolError("heartbeat signer does not match TLS peer")
+                if (method == "cluster.timeout_vote"
+                        and params.get("vote", {}).get("voter") != peer_identity.node_id):
+                    raise ProtocolError("timeout voter does not match TLS peer")
+                if method == "cluster.certificate" and params.get("leader") != peer_identity.node_id:
+                    raise ProtocolError("certificate sender does not match TLS peer")
             if method == "replica.prepare":
                 result = await self.prepare_replica(params)
                 return {"id": request_id, "result": result}
@@ -173,8 +198,6 @@ class ReferenceNode:
             if method == "cluster.certificate":
                 result = await self.receive_certificate(params)
                 return {"id": request_id, "result": result}
-            if peer_identity:
-                peer_identity.authorize(method)
             if method == "cluster.status":
                 result = await self.cluster_status()
                 return {"id": request_id, "result": result}
@@ -520,7 +543,10 @@ class ReferenceNode:
 
         try:
             async with asyncio.timeout(3):
-                async with websockets.connect(url, max_size=64 * 1024) as socket:
+                async with websockets.connect(
+                    url, max_size=64 * 1024,
+                    ssl=self._peer_ssl if url.startswith("wss://") else None,
+                ) as socket:
                     await socket.send(json.dumps({"id": method, "method": method, "params": params}))
                     return json.loads(await socket.recv())
         except (OSError, TimeoutError, ValueError):
@@ -642,7 +668,10 @@ class ReferenceNode:
         async def probe(node_id: str, url: str) -> tuple[str, dict[str, Any]]:
             try:
                 async with asyncio.timeout(3):
-                    async with websockets.connect(url, max_size=64 * 1024) as socket:
+                    async with websockets.connect(
+                        url, max_size=64 * 1024,
+                        ssl=self._peer_ssl if url.startswith("wss://") else None,
+                    ) as socket:
                         await socket.send(json.dumps({
                             "id": f"cluster-{self.node_id}",
                             "method": "status",
@@ -688,6 +717,7 @@ async def serve(
     peer_urls: dict[str, str] | None = None,
     role: str = "standalone",
     cluster_secret: str | None = None,
+    keyring: NodeKeyring | None = None,
 ) -> None:
     import websockets
 
@@ -698,6 +728,8 @@ async def serve(
         peer_urls=peer_urls,
         role=role,
         cluster_secret=cluster_secret,
+        keyring=keyring,
+        tls=tls,
     )
     ssl_context = tls.server_context() if tls else None
     async with websockets.serve(
@@ -739,6 +771,8 @@ def main() -> None:
     parser.add_argument("--tls-cert", help="PEM node certificate")
     parser.add_argument("--tls-key", help="PEM node private key")
     parser.add_argument("--tls-ca", help="PEM certificate authority used to verify clients")
+    parser.add_argument("--node-key", help="PEM Ed25519 private signing key for this node")
+    parser.add_argument("--peer-keys", help="JSON registry of the three node public keys")
     parser.add_argument(
         "--tls-peers",
         help="JSON registry binding authorized certificate fingerprints to node identities",
@@ -753,11 +787,26 @@ def main() -> None:
     except ProtocolError as exc:
         parser.error(str(exc))
     cluster_secret = os.environ.get("SPLITCHAIN_CLUSTER_SECRET")
-    if args.role != "standalone" and not cluster_secret:
-        parser.error("cluster roles require SPLITCHAIN_CLUSTER_SECRET")
+    if bool(args.node_key) != bool(args.peer_keys):
+        parser.error("--node-key and --peer-keys must be provided together")
+    if args.node_key and cluster_secret:
+        parser.error("node keys cannot be combined with SPLITCHAIN_CLUSTER_SECRET")
+    if args.node_key and (
+        not tls or not peers
+        or set(peer_urls) != set(ROLE_ORDER) - {args.role}
+        or any(not peers.has_node_role(role, role) for role in peer_urls)
+        or any(not url.startswith("wss://") for url in peer_urls.values())
+    ):
+        parser.error("node-key mode requires mTLS, peer registry, and both wss peers")
+    if args.role != "standalone" and not cluster_secret and not args.node_key:
+        parser.error("cluster roles require a shared demo secret or independent node keys")
+    try:
+        keyring = NodeKeyring.from_files(args.role, args.node_key, args.peer_keys) if args.node_key else None
+    except ProtocolError as exc:
+        parser.error(str(exc))
     asyncio.run(serve(
         args.host, args.port, args.state, tls, peers, args.node_id, peer_urls,
-        args.role, cluster_secret,
+        args.role, cluster_secret, keyring,
     ))
 
 
