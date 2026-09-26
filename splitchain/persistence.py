@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from .model import Ledger, ProtocolError
+from .model import GenesisConfig, Ledger, ProtocolError
 
 
 class LedgerStore:
@@ -22,10 +22,10 @@ class LedgerStore:
         return ledger, replay
 
     def load_full_node_state(
-        self, default_balances: dict[str, int]
+        self, default_balances: dict[str, int], genesis: GenesisConfig | None = None
     ) -> tuple[Ledger, dict[str, int], dict[str, int]]:
         if not self.path.exists():
-            return Ledger(default_balances), {}, {}
+            return Ledger(genesis=genesis) if genesis else Ledger(default_balances), {}, {}
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
@@ -37,10 +37,10 @@ class LedgerStore:
             replication = data.get("replication_nonces", {})
             if not isinstance(replication, dict):
                 raise ProtocolError("invalid replication replay state")
-            return Ledger.from_snapshot(data["ledger"]), {
+            return Ledger.from_snapshot(data["ledger"], expected_genesis=genesis), {
                 str(actor): int(nonce) for actor, nonce in replay.items()
             }, {str(node): int(nonce) for node, nonce in replication.items()}
-        return Ledger.from_snapshot(data), {}, {}
+        return Ledger.from_snapshot(data, expected_genesis=genesis), {}, {}
 
     def save(
         self,

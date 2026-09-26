@@ -16,6 +16,35 @@ class ProtocolError(ValueError):
     """Raised when a transition violates a protocol invariant."""
 
 
+@dataclass(frozen=True)
+class GenesisConfig:
+    network_id: str
+    max_supply: int
+    allocations: dict[str, int]
+    locked_accounts: tuple[str, ...]
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> GenesisConfig:
+        if not isinstance(raw, dict) or set(raw) != {"schema", "network_id", "max_supply", "allocations", "locked_accounts"} or raw["schema"] != "splitchain-genesis/v1":
+            raise ProtocolError("invalid genesis schema")
+        network, cap, allocations, locked = (raw[key] for key in ("network_id", "max_supply", "allocations", "locked_accounts"))
+        if not isinstance(network, str) or not network or len(network) > 64 or not all(c.isascii() and (c.isalnum() or c in "-_") for c in network):
+            raise ProtocolError("invalid network id")
+        if type(cap) is not int or cap <= 0 or not isinstance(allocations, dict) or not allocations:
+            raise ProtocolError("invalid genesis supply")
+        if any(not isinstance(k, str) or not k or type(v) is not int or v < 0 for k, v in allocations.items()) or sum(allocations.values()) > cap:
+            raise ProtocolError("invalid genesis allocation")
+        if not isinstance(locked, list) or len(set(locked)) != len(locked) or any(not isinstance(k, str) or k not in allocations for k in locked):
+            raise ProtocolError("invalid locked accounts")
+        return cls(network, cap, dict(allocations), tuple(sorted(locked)))
+
+    def public(self) -> dict:
+        return {"schema": "splitchain-genesis/v1", "network_id": self.network_id, "max_supply": self.max_supply, "allocations": dict(sorted(self.allocations.items())), "locked_accounts": list(self.locked_accounts)}
+
+    def digest(self) -> str:
+        return protocol_digest("splitchain/canonical-genesis/v2", self.public())
+
+
 class BranchState(str, Enum):
     OFFERED = "offered"
     ACCEPTED = "accepted"
@@ -75,24 +104,29 @@ class Ledger:
 
     FINALITY_ROUNDS = 3
 
-    def __init__(self, balances: dict[str, int] | None = None) -> None:
+    def __init__(self, balances: dict[str, int] | None = None, genesis: GenesisConfig | None = None) -> None:
+        self.genesis = genesis
+        if genesis is not None and balances is not None and balances != genesis.allocations:
+            raise ProtocolError("initial balances differ from genesis")
         self.round = 0
-        self.balances = dict(balances or {})
+        self.balances = dict(genesis.allocations if genesis else balances or {})
         self.locked: dict[str, int] = {}
         self.branches: dict[str, Branch] = {}
         self.finalized: list[dict] = []
         self.canonical_height = 0
-        genesis = protocol_digest(
+        genesis_digest = genesis.digest() if genesis else protocol_digest(
             "splitchain/canonical-genesis/v1",
             {"balances": dict(sorted(self.balances.items()))},
         )
-        self.canonical_digest = genesis
-        self.canonical_history: dict[int, str] = {0: genesis}
+        self.canonical_digest = genesis_digest
+        self.canonical_history: dict[int, str] = {0: genesis_digest}
 
     def available(self, account: str) -> int:
         return self.balances.get(account, 0) - self.locked.get(account, 0)
 
     def offer(self, sender: str, receiver: str, value: int, ttl: int = 6) -> Branch:
+        if self.genesis and sender in self.genesis.locked_accounts:
+            raise ProtocolError("genesis locked account cannot offer")
         if value <= 0 or ttl < self.FINALITY_ROUNDS:
             raise ProtocolError("value must be positive and ttl must cover finality")
         if sender == receiver:
@@ -174,7 +208,7 @@ class Ledger:
         return changed
 
     def snapshot(self) -> dict:
-        return {
+        result = {
             "schema": "splitchain-ledger/v1",
             "round": self.round,
             "canonical_head": {
@@ -189,14 +223,26 @@ class Ledger:
                 str(height): digest for height, digest in sorted(self.canonical_history.items())
             },
         }
+        if self.genesis:
+            result["genesis"] = self.genesis.public()
+        return result
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict) -> Ledger:
+    def from_snapshot(cls, snapshot: dict, expected_genesis: GenesisConfig | None = None) -> Ledger:
         """Restore a ledger while rechecking invariants at the trust boundary."""
 
         if snapshot.get("schema") != "splitchain-ledger/v1":
             raise ProtocolError("unsupported ledger snapshot schema")
-        ledger = cls(snapshot.get("balances"))
+        raw_genesis = snapshot.get("genesis")
+        genesis = GenesisConfig.from_dict(raw_genesis) if raw_genesis is not None else None
+        if expected_genesis is not None and genesis != expected_genesis:
+            raise ProtocolError("snapshot genesis differs from configured network")
+        ledger = cls(genesis=genesis) if genesis else cls(snapshot.get("balances"))
+        if genesis:
+            balances = snapshot.get("balances")
+            if not isinstance(balances, dict) or any(not isinstance(k, str) or type(v) is not int for k, v in balances.items()):
+                raise ProtocolError("invalid genesis snapshot balances")
+            ledger.balances = dict(balances)
         try:
             ledger.round = int(snapshot["round"])
             head = snapshot["canonical_head"]
@@ -220,6 +266,15 @@ class Ledger:
         return ledger
 
     def _validate_restored_state(self) -> None:
+        if self.genesis:
+            if self.canonical_history.get(0) != self.genesis.digest():
+                raise ProtocolError("snapshot genesis digest mismatch")
+            if sum(self.balances.values()) != sum(self.genesis.allocations.values()):
+                raise ProtocolError("snapshot violates genesis supply")
+            if any(self.balances.get(account) != value for account, value in self.genesis.allocations.items() if account in self.genesis.locked_accounts):
+                raise ProtocolError("snapshot changed locked reserve")
+            if any(branch.sender in self.genesis.locked_accounts for branch in self.branches.values()):
+                raise ProtocolError("locked reserve appears in branch history")
         if self.round < 0 or self.canonical_height < 0:
             raise ProtocolError("negative snapshot counter")
         if self.canonical_history.get(self.canonical_height) != self.canonical_digest:

@@ -53,6 +53,7 @@ On Primary, with its own PEM and TLS paths:
 unset SPLITCHAIN_CLUSTER_SECRET
 splitd --host 0.0.0.0 --port 8765 \
   --state /var/lib/splitchain/ledger.json --node-id primary --role primary \
+  --genesis /etc/splitchain/testnet-genesis.json \
   --node-key /var/lib/splitchain/keys/primary.pem \
   --peer-keys /var/lib/splitchain/keys/peer-keys.json \
   --tls-cert /etc/splitchain/primary.crt --tls-key /etc/splitchain/primary.key \
@@ -62,6 +63,10 @@ splitd --host 0.0.0.0 --port 8765 \
 ```
 
 Use corresponding paths, `--node-id`, `--role`, and peer URLs on the other two hosts.
+Copy the exact same reviewed `configs/testnet-genesis.json` to each host before
+first start. Its network ID and balances are a candidate for valueless testing;
+do not edit it after state exists. The digest is bound into canonical history,
+and a restart with another genesis is rejected. Back up the file and state together.
 Allow only the three known hosts through the firewall. Use hostnames that match the
 TLS certificates. All three clocks must stay reasonably synchronized because the
 research election uses two-second wall-clock ticks.
@@ -75,5 +80,5 @@ them or force a leader without resolving the committed prefix.
 
 The old `SPLITCHAIN_CLUSTER_SECRET` mode remains for the loopback Compose demo only.
 Do not mix nodes from the two identity modes in one cluster. This pilot still lacks
-the supply-cap genesis, faucet, independent security review, and sustained adversarial
+a controlled faucet, independent security review, and sustained adversarial
 operation required for a public testnet.

@@ -23,7 +23,7 @@ from .failover import (
     LeadershipCertificate,
     LeadershipState,
 )
-from .model import Ledger, ProtocolError, canonical_json
+from .model import GenesisConfig, Ledger, ProtocolError, canonical_json
 from .node_identity import NodeKeyring
 from .persistence import LedgerStore
 from .replication import ReplicationAuthenticator
@@ -70,6 +70,7 @@ class ReferenceNode:
         cluster_secret: str | None = None,
         keyring: NodeKeyring | None = None,
         tls: TLSMaterial | None = None,
+        genesis: GenesisConfig | None = None,
     ) -> None:
         initial = balances or {"alice": 1_000, "bob": 1_000}
         self.store = LedgerStore(state_path) if state_path else None
@@ -92,14 +93,14 @@ class ReferenceNode:
         self.replication_pending: dict | None = None
         if self.store:
             self.ledger, replay_nonces, self.replication_nonces = self.store.load_full_node_state(
-                initial
+                initial, genesis
             )
             if self.authenticator:
                 self.authenticator.restore(replay_nonces)
             self.replication_log = self.store.load_replication_log()
             self.replication_pending = self.store.load_replication_pending()
         else:
-            self.ledger = Ledger(initial)
+            self.ledger = Ledger(genesis=genesis) if genesis else Ledger(initial)
         self.leadership: LeadershipState | None = None
         if self.replication and self.role in ROLE_ORDER:
             # Research-only derived keys: replace the shared secret with independent node keys.
@@ -718,6 +719,7 @@ async def serve(
     role: str = "standalone",
     cluster_secret: str | None = None,
     keyring: NodeKeyring | None = None,
+    genesis: GenesisConfig | None = None,
 ) -> None:
     import websockets
 
@@ -730,6 +732,7 @@ async def serve(
         cluster_secret=cluster_secret,
         keyring=keyring,
         tls=tls,
+        genesis=genesis,
     )
     ssl_context = tls.server_context() if tls else None
     async with websockets.serve(
@@ -756,6 +759,7 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--state", help="durable JSON ledger state path")
+    parser.add_argument("--genesis", help="versioned genesis JSON; required on each configured testnet node")
     parser.add_argument("--node-id", default="local", help="unique node identifier")
     parser.add_argument(
         "--role",
@@ -791,6 +795,8 @@ def main() -> None:
         parser.error("--node-key and --peer-keys must be provided together")
     if args.node_key and cluster_secret:
         parser.error("node keys cannot be combined with SPLITCHAIN_CLUSTER_SECRET")
+    if args.node_key and not args.genesis:
+        parser.error("node-key mode requires --genesis on every node")
     if args.node_key and (
         not tls or not peers
         or set(peer_urls) != set(ROLE_ORDER) - {args.role}
@@ -802,11 +808,12 @@ def main() -> None:
         parser.error("cluster roles require a shared demo secret or independent node keys")
     try:
         keyring = NodeKeyring.from_files(args.role, args.node_key, args.peer_keys) if args.node_key else None
-    except ProtocolError as exc:
+        genesis = GenesisConfig.from_dict(json.loads(Path(args.genesis).read_text(encoding="utf-8"))) if args.genesis else None
+    except (ProtocolError, OSError, ValueError) as exc:
         parser.error(str(exc))
     asyncio.run(serve(
         args.host, args.port, args.state, tls, peers, args.node_id, peer_urls,
-        args.role, cluster_secret, keyring,
+        args.role, cluster_secret, keyring, genesis,
     ))
 
 
