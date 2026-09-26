@@ -1,6 +1,6 @@
 {$TESTNET_DOMAIN} {
     encode zstd gzip
-    @status path /status /leadership
+    @status path / /.well-known/splitchain-testnet.json /genesis.json /status /leadership
     handle @status {
         reverse_proxy status:8080
     }
