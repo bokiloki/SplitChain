@@ -185,9 +185,18 @@ class LeadershipState:
                 state.certificates.append(certificate)
         except (KeyError, TypeError, ValueError) as exc:
             raise ProtocolError("invalid leadership snapshot") from exc
-        if state.leader not in ROLE_ORDER or state.term != len(state.certificates):
+        if (
+            state.leader not in ROLE_ORDER
+            or state.term != len(state.certificates)
+            or state.term < 0
+            or state.term >= len(ROLE_ORDER)
+            or state.last_heartbeat_tick < 0
+            or state.committed_nonce < 0
+        ):
             raise ProtocolError("leadership snapshot violates term history")
         expected_leader = ROLE_ORDER[0]
+        previous_tick = 0
+        previous_nonce = 0
         for expected_term, certificate in enumerate(state.certificates, 1):
             expected_leader = ROLE_ORDER[ROLE_ORDER.index(expected_leader) + 1]
             payload = {
@@ -202,10 +211,25 @@ class LeadershipState:
                 or certificate.leader != expected_leader
                 or len(certificate.votes) < cls.QUORUM
                 or len(set(certificate.voters)) != len(certificate.votes)
-                or not all(authority.verify(vote) for vote in certificate.votes)
+                or certificate.committed_nonce < previous_nonce
+                or not all(
+                    authority.verify(vote)
+                    and vote.term == certificate.term
+                    and vote.accused == ROLE_ORDER[expected_term - 1]
+                    and vote.candidate == certificate.leader
+                    and vote.voter != vote.accused
+                    and vote.committed_nonce == certificate.committed_nonce
+                    and vote.observed_tick == certificate.votes[0].observed_tick
+                    and vote.observed_tick - previous_tick >= state.timeout_ticks
+                    for vote in certificate.votes
+                )
                 or digest != certificate.digest
             ):
                 raise ProtocolError("invalid leadership certificate history")
+            previous_tick = certificate.votes[0].observed_tick
+            previous_nonce = certificate.committed_nonce
         if expected_leader != state.leader:
             raise ProtocolError("leadership certificate does not match current leader")
+        if state.last_heartbeat_tick < previous_tick or state.committed_nonce < previous_nonce:
+            raise ProtocolError("leadership snapshot regresses certified state")
         return state

@@ -1,7 +1,10 @@
+import hashlib
+from dataclasses import asdict
+
 import pytest
 
 from splitchain.failover import FailoverAuthority, LeadershipState
-from splitchain.model import ProtocolError
+from splitchain.model import ProtocolError, canonical_json
 
 KEYS = {
     "primary": "primary-failover-key-at-least-32-bytes",
@@ -76,3 +79,40 @@ def test_secondary_then_tertiary_succession_and_exhaustion():
     assert state.leader == "tertiary"
     with pytest.raises(ProtocolError, match="exhausted"):
         state.submit(vote(authority, "primary", term=3, accused="tertiary", tick=12))
+
+
+def test_recovery_rejects_signed_votes_for_wrong_transition():
+    authority = FailoverAuthority(KEYS)
+    state = LeadershipState(authority)
+    state.submit(vote(authority, "secondary"))
+    state.submit(vote(authority, "tertiary"))
+    snapshot = state.snapshot()
+    certificate = snapshot["certificates"][0]
+    certificate["votes"] = [
+        asdict(vote(authority, voter, accused="tertiary"))
+        for voter in ("secondary", "tertiary")
+    ]
+    certificate["digest"] = hashlib.sha256(canonical_json({
+        "committed_nonce": certificate["committed_nonce"],
+        "leader": certificate["leader"],
+        "term": certificate["term"],
+        "votes": tuple(certificate["votes"]),
+    })).hexdigest()
+    with pytest.raises(ProtocolError, match="certificate"):
+        LeadershipState.from_snapshot(authority, snapshot)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("last_heartbeat_tick", 3),
+    ("committed_nonce", -1),
+    ("term", 3),
+])
+def test_recovery_rejects_regressed_or_impossible_state(field, value):
+    authority = FailoverAuthority(KEYS)
+    state = LeadershipState(authority)
+    state.submit(vote(authority, "secondary"))
+    state.submit(vote(authority, "tertiary"))
+    snapshot = state.snapshot()
+    snapshot[field] = value
+    with pytest.raises(ProtocolError):
+        LeadershipState.from_snapshot(authority, snapshot)
