@@ -20,15 +20,16 @@
 <body><main>
   <p><a href="/splitchain/">← SplitChain testnet</a></p>
   <h1>Create a testnet wallet</h1>
-  <p>The wallet ID and credential are generated on this device. The operator must approve the account before it can receive or send test units. No request is uploaded from this page.</p>
+  <p>The wallet ID and credential are generated on this device. Submit the request over HTTPS for operator approval before receiving or sending test units. The operator must store a copy of this testnet credential.</p>
   <section>
     <button type="button" id="generate">Generate wallet</button>
     <div id="result" hidden>
       <p>Wallet ID: <code id="account"></code></p>
       <p>Credential: <code id="credential"></code></p>
-      <p class="warning">Save the download privately. Send the enrollment request only through a private channel to the testnet operator. It includes your credential so the current testnet can verify signed requests.</p>
+      <p class="warning">Download and protect this file before submitting. The request uploads your credential to the operator's private service. Anyone with the credential can sign as your wallet.</p>
       <button type="button" id="download">Download private wallet file</button>
-      <button type="button" id="copy">Copy enrollment request</button>
+      <button type="button" id="submit">Submit for approval</button>
+      <button type="button" id="check" hidden>Check approval status</button>
       <p id="message" role="status" aria-live="polite"></p>
     </div>
   </section>
@@ -47,6 +48,7 @@
       el('credential').textContent = wallet.credential;
       el('result').hidden = false;
       el('message').textContent = 'Save this credential now. Regenerating replaces it.';
+      el('check').hidden = true;
     });
     el('download').addEventListener('click', () => {
       if (!wallet) return;
@@ -55,12 +57,29 @@
       link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
       el('message').textContent = 'Private wallet file downloaded. Keep it secure.';
     });
-    el('copy').addEventListener('click', async () => {
+    el('submit').addEventListener('click', async () => {
       if (!wallet) return;
       try {
-        await navigator.clipboard.writeText(JSON.stringify(wallet));
-        el('message').textContent = 'Enrollment request copied. Send it privately to the operator.';
-      } catch (_) { el('message').textContent = 'Clipboard unavailable. Download the file instead.'; }
+        const {account, credential, network_id, schema} = wallet;
+        const response = await fetch('/splitchain/enroll', {method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({account, credential, network_id, schema}), cache:'no-store'});
+        const result = await response.json();
+        if (!response.ok) throw Error(result.error || 'Submission failed');
+        wallet.receipt = result.receipt;
+        el('check').hidden = false;
+        el('message').textContent = 'Request pending operator approval. Download the file again to save your receipt.';
+      } catch (error) { el('message').textContent = 'Request not submitted: ' + error.message; }
+    });
+    el('check').addEventListener('click', async () => {
+      if (!wallet?.receipt) return;
+      try {
+        const response = await fetch('/splitchain/enroll/check', {method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({account:wallet.account, receipt:wallet.receipt}), cache:'no-store'});
+        const result = await response.json();
+        if (!response.ok) throw Error(result.error || 'Status unavailable');
+        el('message').textContent = result.status === 'active' ? 'Wallet active. Import it into the browser wallet.' :
+          result.status === 'approved' ? 'Approved. Activation is being retried by the operator.' : 'Awaiting operator approval.';
+      } catch (error) { el('message').textContent = 'Could not check status: ' + error.message; }
     });
   })();
   </script>

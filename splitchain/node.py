@@ -63,6 +63,7 @@ class ReferenceNode:
         balances: dict[str, int] | None = None,
         state_path: str | Path | None = None,
         auth_secrets: dict[str, str] | None = None,
+        auth_secrets_path: str | Path | None = None,
         peer_registry: PeerRegistry | None = None,
         node_id: str = "local",
         peer_urls: dict[str, str] | None = None,
@@ -75,6 +76,7 @@ class ReferenceNode:
         initial = balances or {"alice": 1_000, "bob": 1_000}
         self.store = LedgerStore(state_path) if state_path else None
         self.authenticator = RequestAuthenticator(auth_secrets) if auth_secrets else None
+        self.auth_secrets_path = Path(auth_secrets_path) if auth_secrets_path else None
         self.peer_registry = peer_registry
         self.node_id = node_id
         self.peer_urls = dict(peer_urls or {})
@@ -258,6 +260,19 @@ class ReferenceNode:
             raise ProtocolError("account registration requires operator authentication")
         if not self.authenticator or method == "status":
             return
+        auth = request.get("auth")
+        if (self.auth_secrets_path and isinstance(auth, dict)
+                and isinstance(auth.get("actor"), str)
+                and not self.authenticator.knows(auth["actor"])):
+            # The operator replaces a private registry file atomically; only
+            # accept newly added actors, never replace an existing credential.
+            try:
+                updated = json.loads(self.auth_secrets_path.read_text(encoding="utf-8"))
+                secret = updated.get(auth["actor"])
+                if isinstance(secret, str) and len(secret) >= 32:
+                    self.authenticator.add_actor(auth["actor"], secret)
+            except (OSError, ValueError, TypeError):
+                pass
         actor = self.authenticator.verify(request, record=record)
         actor_field = {
             "offer": "sender",
@@ -743,6 +758,7 @@ async def serve(
     keyring: NodeKeyring | None = None,
     genesis: GenesisConfig | None = None,
     auth_secrets: dict[str, str] | None = None,
+    auth_secrets_path: str | Path | None = None,
 ) -> None:
     import websockets
 
@@ -757,6 +773,7 @@ async def serve(
         tls=tls,
         genesis=genesis,
         auth_secrets=auth_secrets,
+        auth_secrets_path=auth_secrets_path,
     )
     ssl_context = tls.server_context() if tls else None
     async with websockets.serve(
@@ -845,7 +862,7 @@ def main() -> None:
         parser.error(str(exc))
     asyncio.run(serve(
         args.host, args.port, args.state, tls, peers, args.node_id, peer_urls,
-        args.role, cluster_secret, keyring, genesis, auth_secrets,
+        args.role, cluster_secret, keyring, genesis, auth_secrets, args.auth_secrets,
     ))
 
 

@@ -61,3 +61,13 @@ class RequestAuthenticator:
         if any(nonce < 0 for nonce in restored.values()):
             raise ProtocolError("invalid replay state")
         self._nonces = restored
+
+    def add_actor(self, actor: str, secret: str) -> None:
+        """Load an approved credential without clearing persisted replay nonces."""
+        encoded = secret.encode()
+        if actor in self._secrets and self._secrets[actor] != encoded:
+            raise ProtocolError("existing credential cannot be replaced")
+        self._secrets[actor] = encoded
+
+    def knows(self, actor: str) -> bool:
+        return actor in self._secrets

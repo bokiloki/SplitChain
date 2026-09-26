@@ -26,11 +26,15 @@ def request_from_file(path: Path, genesis: GenesisConfig) -> tuple[str, str]:
     if path.is_symlink() or not stat.S_ISREG(path.stat().st_mode) or path.stat().st_mode & 0o077:
         raise EnrollmentError("enrollment request must be a private regular file (mode 0600)")
     request = read_json(path)
-    if set(request) != {"schema", "network_id", "account", "credential"} or (
+    required = {"schema", "network_id", "account", "credential"}
+    if set(request) not in (required, required | {"receipt"}) or (
         request["schema"] != "splitchain-wallet-enrollment/v1"
         or request["network_id"] != genesis.network_id
     ):
         raise EnrollmentError("enrollment request does not match this testnet")
+    if "receipt" in request and (not isinstance(request["receipt"], str)
+                                 or not re.fullmatch(r"[0-9a-f]{48}", request["receipt"])):
+        raise EnrollmentError("invalid enrollment receipt")
     account, secret = request["account"], request["credential"]
     if (not isinstance(account, str) or not re.fullmatch(r"[a-z][a-z0-9_]{2,31}", account)
             or account.startswith("testnet_") or account in genesis.allocations
@@ -97,7 +101,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Approve and activate private wallet enrollment requests")
     parser.add_argument("command", choices=("approve", "activate"))
     parser.add_argument("--request", required=True, type=Path)
-    parser.add_argument("--registry", type=Path, default=Path("/operator/accounts.json"))
+    parser.add_argument("--registry", type=Path, default=Path("/operator/auth/accounts.json"))
     parser.add_argument("--genesis", type=Path, default=Path("/etc/splitchain/testnet-genesis.json"))
     args = parser.parse_args()
     try:

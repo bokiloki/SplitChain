@@ -20,5 +20,6 @@ jobs:
         env:
           SPLITCHAIN_CLUSTER_SECRET: ci-only-cluster-secret-at-least-32-chars
           AUTH_FILE: /tmp/splitchain-test-accounts.json
+          TESTNET_ENROLLMENT_PASSWORD: ci-only-dashboard-password-at-least-32-characters
           PUBLIC_TESTNET_DOMAIN: testnet.example.org
         run: docker compose --profile caddy -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml config --quiet

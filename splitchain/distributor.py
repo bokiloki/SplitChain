@@ -397,7 +397,7 @@ class Distributor:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Operator batch distributor for valueless SplitChain test units")
     parser.add_argument("command", choices=("prepare", "fund", "report", "diagnose"))
-    parser.add_argument("--registry", type=Path, default=Path("/operator/accounts.json"))
+    parser.add_argument("--registry", type=Path, default=Path("/operator/auth/accounts.json"))
     parser.add_argument("--output", type=Path, default=Path("/operator/distribution"))
     parser.add_argument("--genesis", type=Path, default=Path("/etc/splitchain/testnet-genesis.json"))
     parser.add_argument("--prefix", default="friend")
