@@ -7,7 +7,7 @@ import base64
 import hashlib
 import json
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from cryptography import x509
@@ -60,7 +60,7 @@ def bootstrap(genesis_path: Path, output: Path, container_uid: int | None = None
     }
     _write(shared / "manifest.json", json.dumps(manifest, sort_keys=True).encode(), 0o644)
     authority = generate_private_key(public_exponent=65537, key_size=2048)
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)  # noqa: UP017 (Python 3.10 compatibility)
     ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "SplitChain isolated rehearsal")])
     ca = (x509.CertificateBuilder().subject_name(ca_name).issuer_name(ca_name)
           .public_key(authority.public_key()).serial_number(x509.random_serial_number())
