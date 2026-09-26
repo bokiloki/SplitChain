@@ -18,7 +18,7 @@ def main() -> None:
         raise SystemExit("WALLET_ID may contain only letters, numbers, underscore, and hyphen")
     if not path.exists():
         raise SystemExit(f"account registry does not exist: {path}")
-    os.chmod(path, 0o600)
+    original = path.stat()
     accounts = json.loads(path.read_text(encoding="utf-8"))
     if wallet_id in accounts:
         raise SystemExit(f"wallet already exists: {wallet_id}")
@@ -27,13 +27,13 @@ def main() -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
+        os.fchown(fd, original.st_uid, original.st_gid)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(accounts, handle, sort_keys=True)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
-        os.chmod(path, 0o600)
     finally:
         if temporary.exists():
             temporary.unlink()
