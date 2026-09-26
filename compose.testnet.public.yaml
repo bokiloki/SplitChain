@@ -40,6 +40,8 @@ services:
     build: .
     entrypoint: ["python", "-m", "splitchain.public_rpc"]
     command: []
+    environment:
+      PUBLIC_RPC_TRUST_PROXY_IP: "1"
     ports: ["127.0.0.1:8089:8089"]
     networks:
       default: {}

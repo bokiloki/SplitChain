@@ -44,9 +44,10 @@ def test_public_gateway_filters_methods_and_keeps_internal_leader_url_private(mo
 
 def test_gateway_rate_limit_is_per_source_ip(monkeypatch):
     class Socket:
-        request = type("Request", (), {"path": "/rpc"})()
-
-        def __init__(self, ip):
+        def __init__(self, ip, forwarded=None):
+            self.request = type("Request", (), {
+                "path": "/rpc", "headers": {"X-SplitChain-Client-IP": forwarded} if forwarded else {},
+            })()
             self.remote_address = (ip, 12345)
             self.response = None
 
@@ -75,6 +76,24 @@ def test_gateway_rate_limit_is_per_source_ip(monkeypatch):
         assert "result" in other.response
 
     asyncio.run(scenario())
+
+
+def test_gateway_uses_proxy_overwritten_client_address(monkeypatch):
+    monkeypatch.setenv("PUBLIC_RPC_TRUST_PROXY_IP", "1")
+
+    class Socket:
+        remote_address = ("172.20.0.2", 12345)
+
+        def __init__(self, forwarded):
+            self.request = type("Request", (), {
+                "headers": {"X-SplitChain-Client-IP": forwarded},
+            })()
+
+    assert public_rpc.Gateway.client_ip(Socket("198.51.100.1")) == "198.51.100.1"
+    assert public_rpc.Gateway.client_ip(Socket("198.51.100.2")) == "198.51.100.2"
+    assert public_rpc.Gateway.client_ip(Socket("not-an-ip")) == "172.20.0.2"
+    monkeypatch.delenv("PUBLIC_RPC_TRUST_PROXY_IP")
+    assert public_rpc.Gateway.client_ip(Socket("198.51.100.1")) == "172.20.0.2"
 
 
 def test_gateway_to_three_replicas_finalizes_sandbox_units(monkeypatch, tmp_path):
