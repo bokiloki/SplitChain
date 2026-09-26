@@ -49,6 +49,7 @@ class LedgerStore:
         replication_nonces: dict[str, int] | None = None,
         replication_log: list[dict] | None = None,
         replication_pending: dict | None = None,
+        leadership: dict | None = None,
     ) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_name(f".{self.path.name}.tmp")
@@ -59,6 +60,7 @@ class LedgerStore:
             "replication_nonces": dict(sorted((replication_nonces or {}).items())),
             "replication_log": replication_log or [],
             "replication_pending": replication_pending,
+            "leadership": leadership,
         }
         payload = json.dumps(document, sort_keys=True, separators=(",", ":"))
         try:
@@ -100,3 +102,14 @@ class LedgerStore:
             return value
         except (OSError, json.JSONDecodeError) as exc:
             raise ProtocolError("unable to load pending replication record") from exc
+
+    def load_leadership_snapshot(self) -> dict | None:
+        if not self.path.exists():
+            return None
+        try:
+            value = json.loads(self.path.read_text(encoding="utf-8")).get("leadership")
+            if value is not None and not isinstance(value, dict):
+                raise ProtocolError("invalid leadership record")
+            return value
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ProtocolError("unable to load leadership record") from exc

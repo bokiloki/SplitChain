@@ -5,6 +5,7 @@ import pytest
 import websockets
 
 from splitchain.auth import RequestAuthenticator
+from splitchain.failover import LeadershipState
 from splitchain.model import ProtocolError
 from splitchain.node import ReferenceNode, parse_peer_values
 from splitchain.transport import PeerIdentity
@@ -35,6 +36,68 @@ def test_node_recovers_persisted_state(tmp_path):
         assert restarted.ledger.branches[offered["result"]["branch_id"]].sender == "alice"
         assert restarted.ledger.balances["alice"] == 100
     asyncio.run(scenario())
+
+
+def test_cluster_leadership_certificate_survives_restart(tmp_path):
+    async def scenario():
+        state = tmp_path / "secondary.json"
+        node = ReferenceNode(
+            state_path=state, node_id="secondary", role="secondary",
+            cluster_secret="research-cluster-secret-at-least-32-bytes",
+        )
+        proposer = LeadershipState(node.leadership.authority)
+        proposer.submit(proposer.authority.vote(
+            "secondary", 1, "primary", "secondary", 4, 0
+        ))
+        certificate = proposer.submit(proposer.authority.vote(
+            "tertiary", 1, "primary", "secondary", 4, 0
+        ))
+        envelope = node.replication.sign("primary", 1, {
+            "method": "advance", "params": {"rounds": 1}
+        })
+        prepared = await node.dispatch({"id": 0, "method": "replica.prepare", "params": envelope})
+        assert prepared["result"]["state"] == "prepared"
+        await node.record_leadership_certificate(certificate)
+        restarted = ReferenceNode(
+            state_path=state, node_id="secondary", role="secondary",
+            cluster_secret="research-cluster-secret-at-least-32-bytes",
+        )
+        response = await restarted.dispatch({"id": 1, "method": "cluster.leadership"})
+        assert response["result"]["leader"] == "secondary"
+        assert response["result"]["term"] == 1
+        assert response["result"] == proposer.snapshot()
+        assert restarted.replication_pending is None
+        rejected = await restarted.dispatch({
+            "id": 2, "method": "replica.prepare", "params": envelope
+        })
+        assert "fenced" in rejected["error"]["message"]
+
+    asyncio.run(scenario())
+
+
+def test_cluster_rejects_tampered_or_mismatched_durable_leadership(tmp_path):
+    state = tmp_path / "secondary.json"
+    node = ReferenceNode(
+        state_path=state, node_id="secondary", role="secondary",
+        cluster_secret="research-cluster-secret-at-least-32-bytes",
+    )
+    node._save()
+    document = json.loads(state.read_text())
+    document["leadership"]["committed_nonce"] = 1
+    state.write_text(json.dumps(document))
+    with pytest.raises(ProtocolError, match="committed replica position"):
+        ReferenceNode(
+            state_path=state, node_id="secondary", role="secondary",
+            cluster_secret="research-cluster-secret-at-least-32-bytes",
+        )
+    document["leadership"]["committed_nonce"] = 0
+    document["leadership"]["term"] = 1
+    state.write_text(json.dumps(document))
+    with pytest.raises(ProtocolError, match="term history"):
+        ReferenceNode(
+            state_path=state, node_id="secondary", role="secondary",
+            cluster_secret="research-cluster-secret-at-least-32-bytes",
+        )
 
 
 def test_authenticated_rpc_rejects_replay():

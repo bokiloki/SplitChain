@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -13,6 +14,7 @@ from urllib.parse import urlparse
 
 from .auth import RequestAuthenticator
 from .ecosystem import Ecosystem
+from .failover import ROLE_ORDER, FailoverAuthority, LeadershipCertificate, LeadershipState
 from .model import Ledger, ProtocolError
 from .persistence import LedgerStore
 from .replication import ReplicationAuthenticator
@@ -75,6 +77,26 @@ class ReferenceNode:
             self.replication_pending = self.store.load_replication_pending()
         else:
             self.ledger = Ledger(initial)
+        self.leadership: LeadershipState | None = None
+        if self.replication and self.role in ROLE_ORDER:
+            # Research-only derived keys: replace the shared secret with independent node keys.
+            keys = {
+                role: hashlib.sha256(
+                    f"splitchain/failover/v1:{role}:{cluster_secret}".encode()
+                ).hexdigest()
+                for role in ROLE_ORDER
+            }
+            authority = FailoverAuthority(keys)
+            saved = self.store.load_leadership_snapshot() if self.store else None
+            self.leadership = (
+                LeadershipState.from_snapshot(authority, saved)
+                if saved is not None else LeadershipState(authority)
+            )
+            committed = self.replication_nonces.get("primary", 0)
+            if saved is None:
+                self.leadership.committed_nonce = committed
+            elif self.leadership.committed_nonce != committed:
+                raise ProtocolError("leadership record does not match committed replica position")
         if self.replication and self.role == "primary":
             last_nonce = 0
             for envelope in self.replication_log:
@@ -114,6 +136,10 @@ class ReferenceNode:
             if method == "cluster.status":
                 result = await self.cluster_status()
                 return {"id": request_id, "result": result}
+            if method == "cluster.leadership":
+                if not self.leadership:
+                    raise ProtocolError("cluster leadership is not configured")
+                return {"id": request_id, "result": self.leadership.snapshot()}
             if method == "cluster.sync":
                 result = await self.sync_replicas()
                 return {"id": request_id, "result": result}
@@ -185,11 +211,26 @@ class ReferenceNode:
                 self.replication_nonces,
                 self.replication_log,
                 self.replication_pending,
+                self.leadership.snapshot() if self.leadership else None,
             )
+
+    async def record_leadership_certificate(self, certificate: LeadershipCertificate) -> None:
+        """Persist a validated transition without yet changing live mutation routing."""
+        if not self.leadership:
+            raise ProtocolError("cluster leadership is not configured")
+        async with self._lock:
+            if self.leadership.committed_nonce != self.replication_nonces.get("primary", 0):
+                raise ProtocolError("leadership position is behind the replica")
+            self.leadership.accept_certificate(certificate)
+            # A prepared mutation without a committed decision cannot cross terms.
+            self.replication_pending = None
+            self._save()
 
     def _verify_replica_envelope(self, envelope: dict) -> tuple[str, int, dict]:
         if not self.replication or self.role not in {"secondary", "tertiary"}:
             raise ProtocolError("node does not accept replicated mutations")
+        if self.leadership and self.leadership.leader != "primary":
+            raise ProtocolError("old Primary is fenced by a leadership certificate")
         return self.replication.verify(envelope, self.replication_nonces.get("primary", 0))
 
     async def prepare_replica(self, envelope: dict) -> Any:
@@ -217,6 +258,8 @@ class ReferenceNode:
                 raise ProtocolError("replica commit does not match its prepared mutation")
             result = self._apply_mutation(mutation)
             self.replication_nonces[leader] = nonce
+            if self.leadership:
+                self.leadership.committed_nonce = nonce
             self.replication_pending = None
             self._save()
             return {"node_id": self.node_id, "nonce": nonce, "mutation": result}
@@ -233,6 +276,8 @@ class ReferenceNode:
     async def replicate_mutation(self, mutation: dict[str, Any]) -> Any:
         if not self.replication:
             raise ProtocolError("cluster replication is not configured")
+        if self.leadership and self.leadership.leader != self.node_id:
+            raise ProtocolError("old Primary is fenced by a leadership certificate")
         async with self._lock:
             await self._abort_uncommitted_primary()
             trial = Ledger.from_snapshot(self.ledger.snapshot())
@@ -259,6 +304,8 @@ class ReferenceNode:
                 raise ProtocolError("mutation did not receive a 2/3 cluster quorum")
             result = self._apply_mutation(mutation)
             self.replication_nonces[self.node_id] = nonce
+            if self.leadership:
+                self.leadership.committed_nonce = nonce
             self.replication_log.append(envelope)
             self.replication_pending = None
             self._save()
