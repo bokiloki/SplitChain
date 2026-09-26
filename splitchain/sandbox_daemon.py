@@ -155,6 +155,16 @@ class SandboxDaemon:
                 return {"epoch_digest": self.votes.epoch_digest,
                         "position": self.position, "round": self.ledger.round,
                         "commit_count": len(self.bets.commits)}
+            if method == "clock.status":
+                now = time.time_ns() // 1_000_000
+                head = protocol_digest("splitchain/sandbox-ledger/v1", self.ledger.snapshot())
+                return {"round": self.ledger.round, "ledger_digest": head,
+                        "peers": {voter: {"round": event.round,
+                                           "same_ledger": event.ledger_digest == head,
+                                           "clock_skewed": skewed,
+                                           "age_ms": max(0, now - received)}
+                                  for voter, (event, received, skewed) in
+                                  sorted(self.clock.latest.items())}}
             if method == "round.challenge":
                 return asdict(self.round_challenge())
             raise ProtocolError("unknown sandbox operation")

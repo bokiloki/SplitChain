@@ -31,6 +31,53 @@ It checks the local protocol logic only. It does **not** deploy six running
 validators or exercise real peer delivery and recovery. Do not add this Compose
 file to the live testnet Compose invocation.
 
+## Six running containers on an isolated server
+
+From a separate checkout of the draft branch, create a fresh throwaway cluster.
+Run these on the Docker host; do not run them from the live testnet directory.
+The generated identity keys are **only for rehearsal** and are unrelated to the
+live nodes or colleague's future keys.
+
+```sh
+python3 -m venv .venv-sandbox
+.venv-sandbox/bin/pip install -e .
+SC_SANDBOX_RUN="/srv/splitchain-sandbox-$(date +%Y%m%d-%H%M%S)"
+sudo .venv-sandbox/bin/python -m splitchain.sandbox_cluster_bootstrap \
+  --genesis configs/testnet-genesis.json \
+  --output "$SC_SANDBOX_RUN" --container-uid 65532
+sudo docker compose -f "$SC_SANDBOX_RUN/compose.json" up -d --build
+sudo docker compose -f "$SC_SANDBOX_RUN/compose.json" ps
+```
+
+The generated Compose project has six distinct network-disabled sandbox
+containers, six relay containers on a Docker `internal` network, and **no
+published ports**. Each sandbox stores its own ledger and vote state in its
+private directory. Its relay uses a private Unix socket and mutually
+authenticated, pinned TLS connections to the five other relays. The generated
+CA and identity keys remain in the root-owned run directory. Keep the printed
+`SC_SANDBOX_RUN` path: it identifies this disposable cluster.
+
+Give relays several seconds to send heartbeats, then inspect each sandbox:
+
+```sh
+for node in primary secondary tertiary colleague-primary colleague-secondary colleague-tertiary; do
+  echo "=== $node ==="
+  sudo docker compose -f "$SC_SANDBOX_RUN/compose.json" exec -T "relay-$node" \
+    python -c 'import asyncio,json; from splitchain.sandbox_daemon import sandbox_request; print(json.dumps(asyncio.run(sandbox_request("/socket/consensus.sock", "clock.status")), sort_keys=True))'
+done
+```
+
+Each node should list all six signed identities under `peers`, with
+`same_ledger: true` and `clock_skewed: false`. The `age_ms` should remain
+small while relays are running. This is a heartbeat connectivity test: the
+cluster does **not** automatically vote rounds, sync missed consensus history,
+or interact with the live chain. To stop the isolated cluster without deleting
+its evidence, run:
+
+```sh
+sudo docker compose -f "$SC_SANDBOX_RUN/compose.json" down
+```
+
 The rehearsal creates six independent temporary stores. Three proposed
 colleague identities each have zero stake. The 7,000,000-unit genesis-locked
 reserve backs the three existing sample allocations; the required stake quorum
