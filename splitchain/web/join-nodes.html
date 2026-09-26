@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#081623"><title>Join SplitChain · Validator candidates</title>
+<style>
+  :root{color-scheme:dark;font:16px/1.6 system-ui,sans-serif;background:#081723;color:#e7f3f5}
+  *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 82% 0%,#1a4c56,transparent 35%),#081723}
+  main{width:min(860px,calc(100% - 32px));margin:40px auto 80px}a{color:#69e5c5}
+  h1{font-size:clamp(2.2rem,8vw,4rem);line-height:1.06;letter-spacing:-.045em}
+  .muted{color:#adc5cb}.notice{border:1px solid #806a3d;background:#49351880;border-radius:12px;padding:18px;color:#ffe2a7}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:26px 0}
+  section{border:1px solid #31545e;background:#102837;border-radius:14px;padding:20px}
+  pre{background:#061b26;padding:16px;border-radius:9px;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}
+  code{color:#a6f6e3}a:focus-visible{outline:3px solid #ffcd75;outline-offset:4px}
+  @media(max-width:650px){.grid{grid-template-columns:1fr}main{margin-top:24px}}
+</style></head>
+<body><main>
+<p><a href="/splitchain/">← Back to testnet</a></p>
+<h1>Prepare independent validator candidates</h1>
+<p class="muted">A colleague can prepare three separate signing identities and test their wallet against the live network. Voting admission requires a six-validator membership upgrade.</p>
+<p class="notice"><strong>Admission is not live yet.</strong> The current cluster has three fixed voting roles. Sending a cluster secret or copying Docker state to another operator would expose wallet credentials and bypass the planned membership change.</p>
+<div class="grid"><section><h2>Current network</h2><p>Three voting validators; two approvals are needed for a mutation.</p></section>
+<section><h2>Proposed network</h2><p>Six voting validators; four approvals would be needed. A three-versus-three split pauses transactions.</p></section></div>
+<section><h2>Colleague: prepare public identities</h2>
+<p>On your own computer, clone the repository, verify the pinned genesis, and create private candidate keys. Share only <code>public-invite.json</code> with the operator.</p>
+<pre>scplit join-testnet --url https://bokiloki.ddns.net/splitchain/ --genesis configs/testnet-genesis.json
+python3 -m splitchain.validator_candidate prepare --genesis configs/testnet-genesis.json --output "$HOME/splitchain-validator-keys"
+python3 -m splitchain.validator_candidate verify --genesis configs/testnet-genesis.json --invite "$HOME/splitchain-validator-keys/public-invite.json"</pre>
+<p>The keys are not active voting keys until the membership migration is implemented and verified. Keep <code>*.pem</code> private.</p></section>
+<section><h2>Start testing today</h2><p><a href="/splitchain/create-wallet">Create a test wallet</a>, get operator approval, and request valueless test units. Test signed transfers through the public gateway while validator admission is being developed.</p>
+<p><a href="https://github.com/bokiloki/SplitChain/blob/main/docs/SIX_VALIDATOR_ADMISSION.md">Read the admission requirements →</a></p></section>
+</main></body></html>

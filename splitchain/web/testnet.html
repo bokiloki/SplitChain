@@ -59,7 +59,18 @@
     .wallet-fields input { min-width:0; width:100%; padding:12px; color:var(--ink); border:1px solid #528082; border-radius:9px; background:#081d29; font:inherit; font-size:16px; }
     .wallet-button, .wallet-transfer button { min-height:46px; border:0; border-radius:9px; padding:11px 17px; font:700 .95rem system-ui; background:var(--accent); color:#082329; cursor:pointer; margin:5px 8px 5px 0; touch-action:manipulation; }
     .wallet-button:hover,.wallet-transfer button:hover { background:#b3ffea; }
-    .wallet-transfer { border-top:1px solid var(--line); padding:14px 0; overflow-wrap:anywhere; }
+    .wallet-transfer { border:1px solid var(--line); border-radius:12px; padding:16px; margin:12px 0; background:#071e2a; overflow-wrap:anywhere; }
+    .wallet-transfer p { margin:8px 0; }
+    .wallet-transfer strong { color:var(--ink); }
+    .wallet-progress { display:flex; justify-content:space-between; gap:8px; margin:14px 0 12px; font-size:.76rem; color:var(--muted); }
+    .wallet-progress span { flex:1; text-align:center; border-top:3px solid var(--line); padding-top:8px; }
+    .wallet-progress .done { color:var(--accent); border-color:var(--accent); }
+    .wallet-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:16px 0; }
+    .wallet-summary div { border:1px solid var(--line); border-radius:10px; padding:12px; background:#071e2a; }
+    .wallet-summary small { display:block; color:var(--muted); }
+    .wallet-summary strong { display:block; font-size:clamp(1.2rem,4vw,1.7rem); overflow-wrap:anywhere; }
+    .wallet-activity { color:var(--muted); font-size:.85rem; margin-top:8px; }
+    .wallet-fields input:focus-visible,.wallet-button:focus-visible,a:focus-visible { outline:3px solid var(--warm); outline-offset:3px; }
     .wallet-id { font:600 1.15rem ui-monospace,monospace; overflow-wrap:anywhere; color:var(--accent); }
     [hidden] { display:none !important; }
     @media(max-width:650px) {
@@ -70,6 +81,7 @@
       .orb { width:180px; }
       .section { margin-top:42px; }
       .wallet-fields { grid-template-columns:1fr; gap:10px; }
+      .wallet-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
       .wallet-button, .wallet-transfer button { width:100%; margin:5px 0; }
       .buttons .button { width:100%; text-align:center; }
       .card { padding:17px; border-radius:12px; }
@@ -92,13 +104,13 @@ pip install .
 scplit join-testnet --url __SPLITCHAIN_BASE__ --genesis configs/testnet-genesis.json</pre><p>After enrollment, use <code>__SPLITCHAIN_RPC__</code> with <code>scplit rpc</code>. See the <a href="https://github.com/bokiloki/SplitChain/blob/main/docs/ONE_HOST_PUBLIC_TESTNET.md">step-by-step transfer guide</a> for signed requests and operator setup.</p></section>
     <section class="section" id="wallet"><div class="eyebrow">Browser wallet</div><h2>Send and receive test units</h2><p>Use the same public signed gateway as the Android wallet. Generate a wallet request, then have the operator approve and activate it. Your credential stays in this browser tab and is cleared when you disconnect or close it. Use a trusted device.</p><p><a class="button secondary" href="__SPLITCHAIN_BASE__create-wallet">Create a new wallet request →</a></p>
       <p><a class="button secondary" href="__SPLITCHAIN_BASE__downloads">Android APK and installation guide ↗</a></p><div class="card"><p id="wallet-message" role="status" aria-live="polite">Checking pinned testnet…</p>
-        <div id="wallet-login"><div class="wallet-fields"><label>Account ID<input id="wallet-account" autocomplete="off" spellcheck="false"></label><label>Private credential<input id="wallet-credential" type="password" autocomplete="off" spellcheck="false"></label></div><button class="wallet-button" id="wallet-connect" type="button">Connect wallet</button></div>
-        <div id="wallet-active" hidden><h3>Receive</h3><p>Share this account ID with the sender; accept their offer below.</p><div class="wallet-id" id="wallet-id"></div><button class="wallet-button" id="wallet-copy" type="button">Copy account ID</button><p id="wallet-balance"></p><button class="wallet-button" id="wallet-refresh" type="button">Refresh balance and offers</button>
+        <div id="wallet-login"><p>Open your private wallet file on this device, or enter the details below. The file is read in your browser and is never uploaded.</p><button class="wallet-button" id="wallet-import-button" type="button">Import private wallet file</button><input id="wallet-import" type="file" accept=".json,application/json" aria-label="Import private wallet file" hidden><div class="wallet-fields"><label>Account ID<input id="wallet-account" autocomplete="off" spellcheck="false"></label><label>Private credential<input id="wallet-credential" type="password" autocomplete="off" spellcheck="false"></label></div><button class="wallet-button" id="wallet-connect" type="button">Connect wallet</button></div>
+        <div id="wallet-active" hidden><h3>Receive</h3><p>Share this account ID with the sender; accept their offer below.</p><div class="wallet-id" id="wallet-id"></div><button class="wallet-button" id="wallet-copy" type="button">Copy account ID</button><div class="wallet-summary"><div><small>Available</small><strong id="wallet-available">—</strong></div><div><small>Reserved</small><strong id="wallet-reserved">—</strong></div><div><small>Total</small><strong id="wallet-total">—</strong></div></div><p id="wallet-balance" class="wallet-activity"></p><button class="wallet-button" id="wallet-refresh" type="button">Refresh balance and offers</button>
           <h3>Send</h3><div class="wallet-fields"><label>Recipient account ID<input id="wallet-recipient" autocomplete="off" spellcheck="false"></label><label>Whole test units<input id="wallet-amount" type="number" min="1" step="1"></label></div><p>An offer temporarily reserves the amount plus equal stake. The recipient accepts; you then commit.</p><button class="wallet-button" id="wallet-send" type="button">Create offer</button>
           <h3>Pending transfers</h3><div id="wallet-branches"></div><p>Committed transfers become spendable after finality rounds.</p><details><summary>Advanced nonce setting</summary><p>If this credential was used elsewhere, enter a number greater than the last accepted nonce.</p><label>Next nonce <input id="wallet-nonce" type="number" min="0" step="1"></label></details><button class="wallet-button" id="wallet-disconnect" type="button">Disconnect and forget credential</button></div>
       </div>
     </section>
-    <section class="section" id="resources"><div class="eyebrow">Reference links</div><h2>Inspect the network</h2><div class="links"><a href="__SPLITCHAIN_BASE__downloads">Downloads & setup</a><a href="__SPLITCHAIN_BASE__explore/genesis">Genesis & supply</a><a href="__SPLITCHAIN_BASE__explore/bootstrap">Join details</a><a href="__SPLITCHAIN_BASE__explore/status">Live ledger</a><a href="__SPLITCHAIN_BASE__explore/leadership">Leadership</a><a href="__SPLITCHAIN_BASE__explore/nodes">Node status</a><a href="https://github.com/bokiloki/SplitChain/blob/main/docs/PUBLIC_TESTNET_PLAN.md">Release gates ↗</a><a href="https://github.com/bokiloki/SplitChain">GitHub ↗</a></div></section>
+    <section class="section" id="resources"><div class="eyebrow">Reference links</div><h2>Inspect the network</h2><div class="links"><a href="__SPLITCHAIN_BASE__downloads">Downloads & setup</a><a href="__SPLITCHAIN_BASE__join-nodes">Prepare validator candidates</a><a href="__SPLITCHAIN_BASE__explore/genesis">Genesis & supply</a><a href="__SPLITCHAIN_BASE__explore/bootstrap">Join details</a><a href="__SPLITCHAIN_BASE__explore/status">Live ledger</a><a href="__SPLITCHAIN_BASE__explore/leadership">Leadership</a><a href="__SPLITCHAIN_BASE__explore/nodes">Node status</a><a href="https://github.com/bokiloki/SplitChain/blob/main/docs/PUBLIC_TESTNET_PLAN.md">Release gates ↗</a><a href="https://github.com/bokiloki/SplitChain">GitHub ↗</a></div></section>
   </main>
   <footer class="footer"><div class="wrap">SplitChain research sandbox · test units have no monetary value · <a href="https://github.com/bokiloki/SplitChain/issues">Report an issue ↗</a></div></footer>
   <script src="__SPLITCHAIN_BASE__wallet.js" defer></script>

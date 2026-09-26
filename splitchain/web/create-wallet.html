@@ -23,6 +23,8 @@
   <p>The wallet ID and credential are generated on this device. Submit the request over HTTPS for operator approval before receiving or sending test units. The operator must store a copy of this testnet credential.</p>
   <section>
     <button type="button" id="generate">Generate wallet</button>
+    <button type="button" id="restore-button">Open saved wallet file</button>
+    <input type="file" id="restore" accept=".json,application/json" hidden>
     <div id="result" hidden>
       <p>Wallet ID: <code id="account"></code></p>
       <p>Credential: <code id="credential"></code></p>
@@ -49,6 +51,29 @@
       el('result').hidden = false;
       el('message').textContent = 'Save this credential now. Regenerating replaces it.';
       el('check').hidden = true;
+    });
+    el('restore-button').addEventListener('click', () => el('restore').click());
+    el('restore').addEventListener('change', async event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        if (file.size > 2048) throw Error('Wallet file is too large');
+        const document = JSON.parse(await file.text());
+        if (document.schema !== 'splitchain-wallet-enrollment/v1' ||
+            document.network_id !== 'splitchain-public-testnet-candidate-1' ||
+            !/^[a-z][a-z0-9_]{2,31}$/.test(document.account) ||
+            !/^[0-9a-f]{64}$/.test(document.credential) ||
+            (document.receipt && !/^[0-9a-f]{48}$/.test(document.receipt)))
+          throw Error('Wallet file does not match this testnet');
+        wallet = document;
+        el('account').textContent = wallet.account;
+        el('credential').textContent = wallet.credential;
+        el('result').hidden = false;
+        el('check').hidden = !wallet.receipt;
+        el('message').textContent = wallet.receipt ? 'Saved request restored. Check its approval status.' :
+          'Wallet restored. Submit it for operator approval when ready.';
+      } catch (error) { el('message').textContent = error.message; }
+      finally { event.target.value = ''; }
     });
     el('download').addEventListener('click', () => {
       if (!wallet) return;
