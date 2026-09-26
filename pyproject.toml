@@ -22,7 +22,7 @@ splitd = "splitchain.node:main"
 include = ["splitchain*"]
 
 [tool.setuptools.package-data]
-splitchain = ["web/*.html"]
+splitchain = ["web/*.html", "web/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
