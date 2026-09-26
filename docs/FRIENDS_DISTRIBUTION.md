@@ -92,7 +92,7 @@ example, from an SSH client on your phone, connecting through your normal
 private administration route:
 
 ```bash
-ssh YOUR_SERVER_USER@YOUR_SERVER 'sudo cat /srv/splitchain-testnet/distribution/friend001.sms.txt'
+ssh -t YOUR_SERVER_USER@YOUR_SERVER 'sudo cat /srv/splitchain-testnet/distribution/friend001.sms.txt'
 ```
 
 Copy the message into an SMS to the person you selected for `friend001`.
