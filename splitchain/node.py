@@ -8,17 +8,29 @@ import hashlib
 import json
 import os
 import re
+import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 from .auth import RequestAuthenticator
 from .ecosystem import Ecosystem
-from .failover import ROLE_ORDER, FailoverAuthority, LeadershipCertificate, LeadershipState
-from .model import Ledger, ProtocolError
+from .failover import (
+    ROLE_ORDER,
+    FailoverAuthority,
+    FailureVote,
+    LeadershipCertificate,
+    LeadershipState,
+)
+from .model import Ledger, ProtocolError, canonical_json
 from .persistence import LedgerStore
 from .replication import ReplicationAuthenticator
 from .transport import PeerIdentity, PeerRegistry, TLSMaterial
+
+
+class CommitUncertain(ProtocolError):
+    """The leader committed, but no replica confirmed the decision to the client."""
 
 
 def parse_peer_values(values: list[str]) -> dict[str, str]:
@@ -92,17 +104,23 @@ class ReferenceNode:
                 LeadershipState.from_snapshot(authority, saved)
                 if saved is not None else LeadershipState(authority)
             )
-            committed = self.replication_nonces.get("primary", 0)
+            committed = self._committed_position()
             if saved is None:
                 self.leadership.committed_nonce = committed
             elif self.leadership.committed_nonce != committed:
                 raise ProtocolError("leadership record does not match committed replica position")
-        if self.replication and self.role == "primary":
-            last_nonce = 0
+        if self.replication and self.replication_log:
+            last_nonce = self._committed_position() - len(self.replication_log)
+            if last_nonce < 0:
+                raise ProtocolError("replication log exceeds committed position")
             for envelope in self.replication_log:
-                _, last_nonce, _ = self.replication.verify(envelope, last_nonce)
-            if last_nonce != self.replication_nonces.get("primary", 0):
-                raise ProtocolError("replication log does not match Primary position")
+                expected = "primary"
+                for certificate in self.leadership.certificates:
+                    if last_nonce >= certificate.committed_nonce:
+                        expected = certificate.leader
+                _, last_nonce, _ = self.replication.verify(envelope, last_nonce, expected)
+            if last_nonce != self._committed_position():
+                raise ProtocolError("replication log does not match committed position")
         self.ecosystem = Ecosystem()
         self._lock = asyncio.Lock()
 
@@ -125,12 +143,22 @@ class ReferenceNode:
                 result = await self.abort_replica(params)
                 return {"id": request_id, "result": result}
             if method == "replica.position":
-                if not self.replication or self.role not in {"secondary", "tertiary"}:
+                if (not self.replication or not self.leadership
+                        or self.role == self.leadership.leader):
                     raise ProtocolError("node does not expose a replica position")
                 return {"id": request_id, "result": {
                     "node_id": self.node_id,
-                    "nonce": self.replication_nonces.get("primary", 0),
+                    "nonce": self._committed_position(),
                 }}
+            if method == "cluster.heartbeat":
+                result = await self.receive_heartbeat(params)
+                return {"id": request_id, "result": result}
+            if method == "cluster.timeout_vote":
+                result = await self.receive_timeout_vote(params)
+                return {"id": request_id, "result": result}
+            if method == "cluster.certificate":
+                result = await self.receive_certificate(params)
+                return {"id": request_id, "result": result}
             if peer_identity:
                 peer_identity.authorize(method)
             if method == "cluster.status":
@@ -143,12 +171,17 @@ class ReferenceNode:
             if method == "cluster.sync":
                 result = await self.sync_replicas()
                 return {"id": request_id, "result": result}
-            if method in self.MUTATING_METHODS and self.replication and self.role == "primary":
+            if (method in self.MUTATING_METHODS and self.replication
+                    and self.leadership and self.leadership.leader == self.node_id):
                 self._verify_request_actor(request, method, params)
                 result = await self.replicate_mutation({"method": method, "params": params})
                 return {"id": request_id, "result": result}
             if method in self.MUTATING_METHODS and self.replication and self.role != "standalone":
-                raise ProtocolError("mutations must be submitted to the Primary node")
+                leader = self.leadership.leader
+                return {"id": request_id, "error": {
+                    "code": "NOT_LEADER", "message": "submit mutations to the certified leader",
+                    "leader": leader, "url": self.peer_urls.get(leader),
+                }}
             async with self._lock:
                 self._verify_request_actor(request, method, params)
                 if method == "status":
@@ -171,6 +204,8 @@ class ReferenceNode:
                     replay = self.authenticator.snapshot() if self.authenticator else {}
                     self.store.save(self.ledger, replay, self.replication_nonces)
             return {"id": request_id, "result": result}
+        except CommitUncertain as exc:
+            return {"id": request_id, "error": {"code": "COMMIT_UNCERTAIN", "message": str(exc)}}
         except (ProtocolError, TypeError) as exc:
             return {"id": request_id, "error": {"code": "INVALID_REQUEST", "message": str(exc)}}
 
@@ -214,12 +249,151 @@ class ReferenceNode:
                 self.leadership.snapshot() if self.leadership else None,
             )
 
+    def _committed_position(self) -> int:
+        return max(self.replication_nonces.values(), default=0)
+
+    def _ledger_digest(self) -> str:
+        return hashlib.sha256(canonical_json(self.ledger.snapshot())).hexdigest()
+
+    async def receive_heartbeat(self, envelope: dict) -> dict:
+        if not self.leadership or not self.leadership.authority.verify_heartbeat(envelope):
+            raise ProtocolError("invalid leadership heartbeat")
+        async with self._lock:
+            if envelope["nonce"] != self._committed_position():
+                raise ProtocolError("heartbeat position differs from local replica")
+            if envelope["tick"] == self.leadership.last_heartbeat_tick:
+                return {"node_id": self.node_id, "term": self.leadership.term}
+            self.leadership.heartbeat(
+                envelope["leader"], envelope["term"], envelope["tick"], envelope["nonce"]
+            )
+            self._save()
+            return {"node_id": self.node_id, "term": self.leadership.term}
+
+    async def receive_timeout_vote(self, params: dict) -> dict:
+        if not self.leadership:
+            raise ProtocolError("cluster leadership is not configured")
+        try:
+            vote = FailureVote(**params["vote"])
+            digest = params["ledger_digest"]
+        except (KeyError, TypeError) as exc:
+            raise ProtocolError("invalid timeout vote request") from exc
+        async with self._lock:
+            state = self.leadership
+            if state.leader == "tertiary":
+                raise ProtocolError("ordered leadership is exhausted")
+            successor = state._successor()
+            witness = next(
+                role for role in ROLE_ORDER if role not in {state.leader, successor}
+            )
+            if (
+                self.node_id != witness or vote.voter != successor
+                or not state.authority.verify(vote)
+                or vote.term != state.term + 1 or vote.accused != state.leader
+                or vote.candidate != successor
+                or vote.observed_tick - state.last_heartbeat_tick < state.timeout_ticks
+                or abs(vote.observed_tick - int(time.time() // 2)) > 1
+                or vote.committed_nonce != self._committed_position()
+                or self.replication_pending is not None
+                or len(self.replication_log) != self._committed_position()
+                or digest != self._ledger_digest()
+            ):
+                raise ProtocolError("timeout vote lacks a matching clean replica")
+            response = state.authority.vote(
+                self.node_id, vote.term, vote.accused, vote.candidate,
+                vote.observed_tick, vote.committed_nonce,
+            )
+            return asdict(response)
+
+    async def receive_certificate(self, params: dict) -> dict:
+        try:
+            certificate = LeadershipCertificate(
+                term=params["term"], leader=params["leader"],
+                committed_nonce=params["committed_nonce"],
+                votes=tuple(FailureVote(**value) for value in params["votes"]),
+                digest=params["digest"],
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ProtocolError("invalid leadership certificate") from exc
+        await self.record_leadership_certificate(certificate)
+        return {"node_id": self.node_id, "term": self.leadership.term}
+
+    async def failover_step(self, tick: int | None = None) -> None:
+        """One conservative heartbeat/election step for the research cluster."""
+        if not self.leadership:
+            return
+        tick = int(time.time() // 2) if tick is None else tick
+        state = self.leadership
+        if state.last_heartbeat_tick == 0:
+            state.last_heartbeat_tick = tick
+            self._save()
+        if state.leader == self.node_id:
+            async with self._lock:
+                if tick > state.last_heartbeat_tick:
+                    state.heartbeat(self.node_id, state.term, tick, self._committed_position())
+                    self._save()
+                heartbeat = state.authority.sign_heartbeat(
+                    self.node_id, state.term, tick, self._committed_position()
+                )
+                certificate = asdict(state.certificates[-1]) if state.certificates else None
+            if certificate:
+                await asyncio.gather(*(
+                    self._replica_rpc(url, "cluster.certificate", certificate)
+                    for url in self.peer_urls.values()
+                ))
+            await asyncio.gather(*(
+                self._replica_rpc(url, "cluster.heartbeat", heartbeat)
+                for url in self.peer_urls.values()
+            ))
+            return
+        if state.leader == "tertiary" or self.node_id != state._successor():
+            return
+        if (tick - state.last_heartbeat_tick < state.timeout_ticks
+                or self.replication_pending is not None
+                or len(self.replication_log) != self._committed_position()):
+            return
+        witness = next(role for role in ROLE_ORDER if role not in {state.leader, self.node_id})
+        witness_url = self.peer_urls.get(witness)
+        if not witness_url:
+            return
+        # Recover a certificate the witness persisted if its acknowledgement was lost.
+        remote = await self._replica_rpc(witness_url, "cluster.leadership", {})
+        if remote and "result" in remote and remote["result"].get("term") == state.term + 1:
+            try:
+                restored = LeadershipState.from_snapshot(state.authority, remote["result"])
+                await self.record_leadership_certificate(restored.certificates[-1])
+            except (ProtocolError, IndexError):
+                pass
+            return
+        vote = state.authority.vote(
+            self.node_id, state.term + 1, state.leader, self.node_id,
+            tick, self._committed_position(),
+        )
+        answer = await self._replica_rpc(witness_url, "cluster.timeout_vote", {
+            "vote": asdict(vote), "ledger_digest": self._ledger_digest(),
+        })
+        if not answer or "result" not in answer:
+            return
+        try:
+            signed = FailureVote(**answer["result"])
+            trial = LeadershipState.from_snapshot(state.authority, state.snapshot())
+            trial.submit(vote)
+            certificate = trial.submit(signed)
+        except (ProtocolError, TypeError):
+            return
+        accepted = await self._replica_rpc(
+            witness_url, "cluster.certificate", asdict(certificate)
+        )
+        if accepted and "result" in accepted:
+            await self.record_leadership_certificate(certificate)
+
     async def record_leadership_certificate(self, certificate: LeadershipCertificate) -> None:
-        """Persist a validated transition without yet changing live mutation routing."""
+        """Persist a validated transition and fence the former leader."""
         if not self.leadership:
             raise ProtocolError("cluster leadership is not configured")
         async with self._lock:
-            if self.leadership.committed_nonce != self.replication_nonces.get("primary", 0):
+            if self.leadership.certificates and certificate == self.leadership.certificates[-1]:
+                return
+            if self.leadership.committed_nonce != self._committed_position():
                 raise ProtocolError("leadership position is behind the replica")
             self.leadership.accept_certificate(certificate)
             # A prepared mutation without a committed decision cannot cross terms.
@@ -227,11 +401,14 @@ class ReferenceNode:
             self._save()
 
     def _verify_replica_envelope(self, envelope: dict) -> tuple[str, int, dict]:
-        if not self.replication or self.role not in {"secondary", "tertiary"}:
-            raise ProtocolError("node does not accept replicated mutations")
-        if self.leadership and self.leadership.leader != "primary":
+        if (self.leadership and self.leadership.leader != "primary"
+                and envelope.get("leader") == "primary"):
             raise ProtocolError("old Primary is fenced by a leadership certificate")
-        return self.replication.verify(envelope, self.replication_nonces.get("primary", 0))
+        if not self.replication or self.role not in ROLE_ORDER or self.role == self.leadership.leader:
+            raise ProtocolError("node does not accept replicated mutations")
+        return self.replication.verify(
+            envelope, self._committed_position(), self.leadership.leader
+        )
 
     async def prepare_replica(self, envelope: dict) -> Any:
         async with self._lock:
@@ -258,6 +435,7 @@ class ReferenceNode:
                 raise ProtocolError("replica commit does not match its prepared mutation")
             result = self._apply_mutation(mutation)
             self.replication_nonces[leader] = nonce
+            self.replication_log.append(envelope)
             if self.leadership:
                 self.leadership.committed_nonce = nonce
             self.replication_pending = None
@@ -287,7 +465,7 @@ class ReferenceNode:
                 self._apply_mutation(mutation)
             finally:
                 self.ledger = original
-            nonce = self.replication_nonces.get(self.node_id, 0) + 1
+            nonce = self._committed_position() + 1
             envelope = self.replication.sign(self.node_id, nonce, mutation)
             self.replication_pending = envelope
             self._save()
@@ -309,10 +487,18 @@ class ReferenceNode:
             self.replication_log.append(envelope)
             self.replication_pending = None
             self._save()
-            await asyncio.gather(*(
+            commit_responses = await asyncio.gather(*(
                 self._replica_rpc(url, "replica.commit", envelope)
                 for _, url in sorted(self.peer_urls.items())
             ))
+            if not any(
+                response and response.get("result", {}).get("nonce") == nonce
+                for response in commit_responses
+            ):
+                raise CommitUncertain(
+                    "commit outcome is uncertain: Primary committed locally but no replica "
+                    "confirmed; inspect cluster state before retrying"
+                )
             return result
 
     async def _replica_rpc(self, url: str, method: str, params: dict) -> dict | None:
@@ -334,8 +520,8 @@ class ReferenceNode:
             nonce = int(position["result"].get("nonce", -1))
         except (TypeError, ValueError):
             return False
-        leader_position = self.replication_nonces.get("primary", 0)
-        if nonce < 0 or nonce > leader_position:
+        leader_position = self._committed_position()
+        if nonce < 0 or nonce > leader_position or len(self.replication_log) != leader_position:
             return False
         for historical in self.replication_log[nonce:]:
             prepared = await self._replica_rpc(url, "replica.prepare", historical)
@@ -362,8 +548,8 @@ class ReferenceNode:
         self._save()
 
     async def sync_replicas(self) -> dict[str, str]:
-        if not self.replication or self.role != "primary":
-            raise ProtocolError("only Primary can synchronize replicas")
+        if not self.replication or not self.leadership or self.leadership.leader != self.node_id:
+            raise ProtocolError("only the certified leader can synchronize replicas")
         async with self._lock:
             await self._abort_uncommitted_primary()
             results = await asyncio.gather(*(
@@ -446,7 +632,18 @@ async def serve(
     ):
         scheme = "wss" if tls else "ws"
         print(f"splitd listening on {scheme}://{host}:{port}")
-        await asyncio.Future()
+        async def run_leadership() -> None:
+            while True:
+                try:
+                    await node.failover_step()
+                except ProtocolError as exc:
+                    print(f"leadership step rejected: {exc}")
+                await asyncio.sleep(2)
+
+        if node.leadership:
+            await run_leadership()
+        else:
+            await asyncio.Future()
 
 
 def main() -> None:

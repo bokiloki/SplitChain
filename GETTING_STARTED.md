@@ -158,14 +158,17 @@ decision before sending `commit`; replicas apply only a matching prepared envelo
 records, commit history and replay nonces survive restarts, while failed quorum attempts are
 explicitly aborted without changing the ledger.
 After an offline replica returns, run
-`scplit rpc cluster.sync --url ws://127.0.0.1:8765`; Primary reads each replica's durable
+`scplit rpc cluster.sync --url ws://127.0.0.1:8765`; the current leader reads each replica's durable
 position and replays only the missing, independently verified envelopes in order.
 
-The failover safety core models term-numbered, 2/3-certified succession from Primary to
-Secondary and then Tertiary. Votes must agree on timeout tick and committed replication
-position, while a fresh heartbeat cancels incomplete failure votes. Live background heartbeat,
-vote transport and endpoint redirection remain the next integration step; the current model is
-not yet an unattended production failover service.
+The experimental cluster exchanges signed heartbeats every two seconds and attempts
+2/3-certified Primary → Secondary → Tertiary succession after three missed ticks.
+It requires two clean replicas with the same committed position and ledger state.
+`scplit rpc` follows a reachable leader endpoint for writes; use `--leader-url` when
+Compose's internal hostname cannot resolve from your client. An uncertain commit,
+prepared mutation, partition, or incomplete replica history can halt promotion and
+require manual recovery. This remains an unaudited research service, not a production
+failover system.
 
 Stop the environment with:
 

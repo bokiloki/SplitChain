@@ -25,7 +25,9 @@ class ReplicationAuthenticator:
             ).hexdigest(),
         }
 
-    def verify(self, envelope: dict, last_nonce: int) -> tuple[str, int, dict]:
+    def verify(
+        self, envelope: dict, last_nonce: int, expected_leader: str = "primary"
+    ) -> tuple[str, int, dict]:
         try:
             leader = str(envelope["leader"])
             nonce = int(envelope["nonce"])
@@ -37,7 +39,9 @@ class ReplicationAuthenticator:
         expected = hmac.new(
             self._secret, canonical_json(payload), hashlib.sha256
         ).hexdigest()
-        if leader != "primary" or nonce <= last_nonce or not hmac.compare_digest(expected, signature):
+        if leader != expected_leader or nonce <= last_nonce or not hmac.compare_digest(
+            expected, signature
+        ):
             raise ProtocolError("invalid or replayed replication envelope")
         if not isinstance(mutation, dict) or mutation.get("method") not in {
             "offer", "accept", "commit", "cancel", "advance"
