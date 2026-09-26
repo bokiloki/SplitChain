@@ -56,13 +56,26 @@
     @media(max-width:800px) { .hero { grid-template-columns:1fr; padding-top:48px; } .orb { width:220px; } .grid,.steps { grid-template-columns:1fr; } .nav { align-items:flex-start; padding:15px 0; flex-direction:column; gap:9px; } }
       .wallet-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:14px 0; }
     .wallet-fields label { display:grid; gap:6px; color:var(--muted); font-size:.88rem; }
-    .wallet-fields input { min-width:0; width:100%; padding:12px; color:var(--ink); border:1px solid #528082; border-radius:9px; background:#081d29; font:inherit; }
-    .wallet-button, .wallet-transfer button { border:0; border-radius:9px; padding:11px 17px; font:700 .95rem system-ui; background:var(--accent); color:#082329; cursor:pointer; margin:5px 8px 5px 0; }
+    .wallet-fields input { min-width:0; width:100%; padding:12px; color:var(--ink); border:1px solid #528082; border-radius:9px; background:#081d29; font:inherit; font-size:16px; }
+    .wallet-button, .wallet-transfer button { min-height:46px; border:0; border-radius:9px; padding:11px 17px; font:700 .95rem system-ui; background:var(--accent); color:#082329; cursor:pointer; margin:5px 8px 5px 0; touch-action:manipulation; }
     .wallet-button:hover,.wallet-transfer button:hover { background:#b3ffea; }
     .wallet-transfer { border-top:1px solid var(--line); padding:14px 0; overflow-wrap:anywhere; }
     .wallet-id { font:600 1.15rem ui-monospace,monospace; overflow-wrap:anywhere; color:var(--accent); }
     [hidden] { display:none !important; }
-    @media(max-width:650px) { .wallet-fields { grid-template-columns:1fr; } }
+    @media(max-width:650px) {
+      .wrap { width:min(100% - 24px,1120px); }
+      .navlinks { display:grid; grid-template-columns:repeat(3,1fr); width:100%; gap:8px; }
+      .navlinks a { text-align:center; padding:8px 4px; border:1px solid var(--line); border-radius:8px; }
+      .hero { padding:38px 0 30px; gap:28px; }
+      .orb { width:180px; }
+      .section { margin-top:42px; }
+      .wallet-fields { grid-template-columns:1fr; gap:10px; }
+      .wallet-button, .wallet-transfer button { width:100%; margin:5px 0; }
+      .buttons .button { width:100%; text-align:center; }
+      .card { padding:17px; border-radius:12px; }
+      pre { font-size:.76rem; padding:13px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior:auto; } }
   </style>
 </head>
 <body>
