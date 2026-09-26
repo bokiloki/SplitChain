@@ -120,3 +120,12 @@ def test_node_status_marks_missing_or_different_heads(monkeypatch):
 
     monkeypatch.setattr(public_status, "fetch_node_status", different)
     assert public_status.fetch_nodes()["heads_agree"] is False
+
+
+def test_nodes_probe_is_rate_limited_per_client(monkeypatch):
+    public_status._nodes_limits.clear()
+    for _ in range(public_status._NODES_LIMIT):
+        assert public_status.allow_nodes_request("192.0.2.1", now=100.0)
+    assert not public_status.allow_nodes_request("192.0.2.1", now=100.0)
+    assert public_status.allow_nodes_request("192.0.2.2", now=100.0)
+    assert public_status.allow_nodes_request("192.0.2.1", now=161.0)
