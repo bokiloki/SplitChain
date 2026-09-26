@@ -4,7 +4,7 @@ Experimental Android app for **valueless test units** on `https://bokiloki.ddns.
 
 ## Build and install
 
-1. Open `android-wallet/` in Android Studio with JDK 17 and Android SDK 35; let it install the Android Gradle plugin 8.9.0 and Gradle 8.11.1. This folder intentionally contains no downloaded Gradle wrapper binary: Android Studio can import and sync the Gradle project directly.
+1. Open `android-wallet/` in Android Studio with JDK 17 and Android SDK 35; let it install the Android Gradle plugin 8.9.0 and Gradle 8.11.1. Android Studio can import and sync the Gradle project directly. Alternatively, download the prebuilt APK from the testnet Downloads page.
 2. Select **Build → Build Bundle(s) / APK(s) → Build APK(s)** and install the resulting `app/build/outputs/apk/debug/app-debug.apk` on Android 8.0 (API 26) or newer.
 3. To run protocol tests, use **Run → All Tests**, or `gradle testDebugUnitTest` if you already have Gradle 8.11.1 installed.
 
