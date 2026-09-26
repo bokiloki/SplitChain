@@ -16,4 +16,9 @@ jobs:
       - run: ruff check .
       - run: pytest -q
       - run: scplit simulate --seed 42 --steps 500 > /tmp/simulation.json
-
+      - name: Validate one-host Compose stack
+        env:
+          SPLITCHAIN_CLUSTER_SECRET: ci-only-cluster-secret-at-least-32-chars
+          AUTH_FILE: /tmp/splitchain-test-accounts.json
+          PUBLIC_TESTNET_DOMAIN: testnet.example.org
+        run: docker compose --profile caddy -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml config --quiet

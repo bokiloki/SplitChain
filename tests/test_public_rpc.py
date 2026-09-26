@@ -3,7 +3,7 @@ import json
 
 import websockets
 
-from splitchain import public_rpc
+from splitchain import public_rpc, round_clock
 from splitchain.auth import RequestAuthenticator
 from splitchain.model import GenesisConfig
 from splitchain.node import ReferenceNode
@@ -71,6 +71,7 @@ def test_gateway_to_three_replicas_finalizes_sandbox_units(monkeypatch, tmp_path
             async with websockets.serve(primary.handler, "127.0.0.1", 0) as p_server:
                 p_url = f"ws://127.0.0.1:{p_server.sockets[0].getsockname()[1]}"
                 monkeypatch.setattr(public_rpc, "BACKENDS", (p_url, s_url, t_url))
+                monkeypatch.setattr(round_clock, "BACKENDS", (p_url, s_url, t_url))
                 gateway = public_rpc.Gateway()
                 async with websockets.serve(gateway.handler, "127.0.0.1", 0) as g_server:
                     g_url = f"ws://127.0.0.1:{g_server.sockets[0].getsockname()[1]}/rpc"
@@ -96,9 +97,10 @@ def test_gateway_to_three_replicas_finalizes_sandbox_units(monkeypatch, tmp_path
                     assert "result" in await public(await signed("commit", {
                         "branch_id": branch, "sender": "testnet_faucet", "payload": {},
                     }, "testnet_faucet", 2))
-                    assert "result" in await primary.dispatch(await signed("advance", {
-                        "rounds": 3,
-                    }, "testnet_operator", 1))
+                    clock = round_clock.RoundClock(secrets["testnet_operator"],
+                                                  tmp_path / "round-nonce")
+                    for _ in range(3):
+                        assert "result" in await clock.step()
                     assert all(node.ledger.balances["bob"] == 10 for node in (
                         primary, secondary, tertiary,
                     ))
