@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -20,6 +22,26 @@ BACKENDS = (
 )
 ROUTES = {"/status": "status", "/leadership": "cluster.leadership"}
 EXPLORER_PAGES = {"/explore/genesis", "/explore/status", "/explore/leadership", "/explore/bootstrap", "/explore/nodes"}
+_nodes_limits: dict[str, tuple[float, int]] = {}
+_nodes_limits_lock = threading.Lock()
+_NODES_WINDOW = 60.0
+_NODES_LIMIT = 30
+
+
+def allow_nodes_request(client: str, now: float | None = None) -> bool:
+    """Bound expensive three-backend probes per source address."""
+    current = time.monotonic() if now is None else now
+    with _nodes_limits_lock:
+        started, count = _nodes_limits.get(client, (current, 0))
+        if current - started >= _NODES_WINDOW:
+            started, count = current, 0
+        if count >= _NODES_LIMIT:
+            _nodes_limits[client] = (started, count)
+            return False
+        _nodes_limits[client] = (started, count + 1)
+        if len(_nodes_limits) > 2048:
+            _nodes_limits.clear()
+        return True
 
 
 def fetch_read_only(method: str) -> dict:
@@ -166,6 +188,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, result)
             return
         if self.path == "/nodes":
+            client = self.client_address[0] if self.client_address else "unknown"
+            if not allow_nodes_request(client):
+                self._send(429, {"error": "node status rate limit exceeded"})
+                return
             self._send(200, fetch_nodes())
             return
         if self.path != urlsplit(self.path).path or self.path not in ROUTES:

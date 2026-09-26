@@ -131,6 +131,8 @@ class Ledger:
             raise ProtocolError("value must be positive and ttl must cover finality")
         if sender == receiver:
             raise ProtocolError("sender and receiver must differ")
+        if receiver not in self.balances:
+            raise ProtocolError("unknown receiver account")
         if self.available(sender) < value * 2:
             raise ProtocolError("sender needs value plus equal branch stake")
         nonce = len(self.branches)
