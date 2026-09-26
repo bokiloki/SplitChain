@@ -17,10 +17,10 @@
 <body><main>
 <p><a href="/splitchain/">← Back to testnet</a></p>
 <h1>Prepare independent validator candidates</h1>
-<p class="muted">A colleague can prepare three separate signing identities and test their wallet against the live network. Voting admission requires a six-validator membership upgrade.</p>
+<p class="muted">A colleague can prepare three separate signing identities and test their wallet against the live network. Voting admission requires a validator-stake protocol upgrade.</p>
 <p class="notice"><strong>Admission is not live yet.</strong> The current cluster has three fixed voting roles. Sending a cluster secret or copying Docker state to another operator would expose wallet credentials and bypass the planned membership change.</p>
-<div class="grid"><section><h2>Current network</h2><p>Three voting validators; two approvals are needed for a mutation.</p></section>
-<section><h2>Proposed network</h2><p>Six voting validators; four approvals would be needed. A three-versus-three split pauses transactions.</p></section></div>
+<div class="grid"><section><h2>Current network</h2><p>Three fixed voting roles; two approvals are needed for a mutation. Validator stake weighting is not active.</p></section>
+<section><h2>Candidate nodes</h2><p>Three more identities may be prepared, but they have no votes. The planned quorum is based on assigned validator stake, not node count.</p></section></div>
 <section><h2>Colleague: prepare public identities</h2>
 <p>On your own computer, clone the repository, verify the pinned genesis, and create private candidate keys. Share only <code>public-invite.json</code> with the operator.</p>
 <pre>scplit join-testnet --url https://bokiloki.ddns.net/splitchain/ --genesis configs/testnet-genesis.json

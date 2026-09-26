@@ -47,3 +47,64 @@ class JointMembership:
     def approves(self, voters: set[str]) -> bool:
         """During transition, neither the old nor the new quorum can decide alone."""
         return self.previous.approves(voters) and self.candidate.approves(voters)
+
+
+@dataclass(frozen=True)
+class StakeMembership:
+    """Proposed voting policy; live replication has not adopted stake epochs yet."""
+
+    epoch: int
+    allocations: tuple[tuple[str, int], ...]
+    backing_limit: int
+
+    def __post_init__(self) -> None:
+        identities = [identity for identity, _ in self.allocations]
+        if (
+            type(self.epoch) is not int or self.epoch < 0
+            or type(self.backing_limit) is not int or self.backing_limit < 1
+            or not identities or len(set(identities)) != len(identities)
+            or any(not isinstance(identity, str) or not identity for identity in identities)
+            or any(type(amount) is not int or amount < 0 for _, amount in self.allocations)
+            or sum(amount for _, amount in self.allocations) == 0
+            or sum(amount for _, amount in self.allocations) > self.backing_limit
+        ):
+            raise ProtocolError("invalid validator stake allocation")
+
+    @property
+    def total_stake(self) -> int:
+        return sum(amount for _, amount in self.allocations)
+
+    @property
+    def quorum_stake(self) -> int:
+        return (2 * self.total_stake) // 3 + 1
+
+    def digest(self) -> str:
+        return protocol_digest("splitchain/stake-membership/v1", {
+            "epoch": self.epoch,
+            "backing_limit": self.backing_limit,
+            "allocations": tuple(sorted(self.allocations)),
+        })
+
+    def approves(self, voters: set[str], transaction_value: int) -> bool:
+        if type(transaction_value) is not int or transaction_value < 1:
+            raise ProtocolError("transaction value must be positive")
+        if not isinstance(voters, set):
+            raise ProtocolError("voters must be distinct identities")
+        return sum(
+            amount for identity, amount in self.allocations
+            if identity in voters and amount >= transaction_value
+        ) >= self.quorum_stake
+
+
+@dataclass(frozen=True)
+class JointStakeMembership:
+    previous: StakeMembership
+    candidate: StakeMembership
+
+    def __post_init__(self) -> None:
+        if self.candidate.epoch != self.previous.epoch + 1:
+            raise ProtocolError("invalid validator stake transition")
+
+    def approves(self, voters: set[str], transaction_value: int) -> bool:
+        return (self.previous.approves(voters, transaction_value)
+                and self.candidate.approves(voters, transaction_value))

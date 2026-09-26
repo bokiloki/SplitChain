@@ -104,6 +104,59 @@ def test_primary_rejects_mutation_without_quorum():
     asyncio.run(scenario())
 
 
+def test_candidate_peers_cannot_supply_replication_quorum():
+    async def scenario():
+        primary = ReferenceNode(
+            node_id="primary", role="primary", cluster_secret=SECRET,
+            peer_urls={"colleague-primary": "ws://candidate.invalid:8765"},
+        )
+
+        async def candidate_reply(url, method, params):
+            if method == "replica.position":
+                return {"result": {"node_id": "colleague-primary", "nonce": 0}}
+            if method == "replica.prepare":
+                return {"result": {
+                    "node_id": "colleague-primary", "nonce": params["nonce"],
+                    "state": "prepared",
+                }}
+            return {"result": {"node_id": "colleague-primary", "nonce": 1}}
+
+        primary._replica_rpc = candidate_reply
+        response = await primary.dispatch({
+            "id": 1, "method": "offer",
+            "params": {"sender": "alice", "receiver": "bob", "value": 10},
+        })
+        assert "quorum" in response["error"]["message"]
+        assert primary.ledger.branches == {}
+
+    asyncio.run(scenario())
+
+
+def test_misidentified_replica_cannot_supply_quorum():
+    async def scenario():
+        primary = ReferenceNode(
+            node_id="primary", role="primary", cluster_secret=SECRET,
+            peer_urls={"secondary": "ws://candidate.invalid:8765"},
+        )
+
+        async def wrong_identity(url, method, params):
+            if method == "replica.position":
+                return {"result": {"node_id": "tertiary", "nonce": 0}}
+            return {"result": {
+                "node_id": "tertiary", "nonce": params["nonce"], "state": "prepared",
+            }}
+
+        primary._replica_rpc = wrong_identity
+        response = await primary.dispatch({
+            "id": 1, "method": "offer",
+            "params": {"sender": "alice", "receiver": "bob", "value": 10},
+        })
+        assert "quorum" in response["error"]["message"]
+        assert primary.ledger.branches == {}
+
+    asyncio.run(scenario())
+
+
 def test_primary_reports_uncertain_outcome_when_commit_ack_is_lost(tmp_path):
     async def scenario():
         secondary = ReferenceNode(

@@ -544,13 +544,17 @@ class ReferenceNode:
             envelope = self.replication.sign(self.node_id, nonce, mutation)
             self.replication_pending = envelope
             self._save()
+            voting_peers = [
+                (node_id, url) for node_id, url in sorted(self.peer_urls.items())
+                if node_id in ROLE_ORDER and node_id != self.node_id
+            ]
             acknowledgements = sum(await asyncio.gather(
-                *(self._sync_and_prepare(url, envelope) for _, url in sorted(self.peer_urls.items()))
+                *(self._sync_and_prepare(node_id, url, envelope) for node_id, url in voting_peers)
             ))
             if acknowledgements < 1:
                 await asyncio.gather(*(
                     self._replica_rpc(url, "replica.abort", envelope)
-                    for _, url in sorted(self.peer_urls.items())
+                    for _, url in voting_peers
                 ))
                 self.replication_pending = None
                 self._save()
@@ -564,11 +568,12 @@ class ReferenceNode:
             self._save()
             commit_responses = await asyncio.gather(*(
                 self._replica_rpc(url, "replica.commit", envelope)
-                for _, url in sorted(self.peer_urls.items())
+                for _, url in voting_peers
             ))
             if not any(
-                response and response.get("result", {}).get("nonce") == nonce
-                for response in commit_responses
+                response and response.get("result", {}).get("node_id") == node_id
+                and response["result"].get("nonce") == nonce
+                for (node_id, _), response in zip(voting_peers, commit_responses, strict=True)
             ):
                 raise CommitUncertain(
                     "commit outcome is uncertain: Primary committed locally but no replica "
@@ -590,9 +595,11 @@ class ReferenceNode:
         except (OSError, TimeoutError, ValueError):
             return None
 
-    async def _sync_history(self, url: str) -> bool:
+    async def _sync_history(self, url: str, expected_node_id: str | None = None) -> bool:
         position = await self._replica_rpc(url, "replica.position", {})
         if not position or "result" not in position:
+            return False
+        if expected_node_id is not None and position["result"].get("node_id") != expected_node_id:
             return False
         try:
             nonce = int(position["result"].get("nonce", -1))
@@ -605,6 +612,11 @@ class ReferenceNode:
             prepared = await self._replica_rpc(url, "replica.prepare", historical)
             committed = await self._replica_rpc(url, "replica.commit", historical)
             if not prepared or "result" not in prepared or not committed or "result" not in committed:
+                return False
+            if expected_node_id is not None and (
+                prepared["result"].get("node_id") != expected_node_id
+                or committed["result"].get("node_id") != expected_node_id
+            ):
                 return False
         return True
 
@@ -667,11 +679,15 @@ class ReferenceNode:
             and confirmed["result"].get("ledger_digest") == self._ledger_digest()
         )
 
-    async def _sync_and_prepare(self, url: str, envelope: dict) -> bool:
-        if not await self._sync_history(url):
+    async def _sync_and_prepare(self, node_id: str, url: str, envelope: dict) -> bool:
+        if not await self._sync_history(url, node_id):
             return False
         response = await self._replica_rpc(url, "replica.prepare", envelope)
-        return bool(response and "result" in response)
+        return bool(
+            response and response.get("result", {}).get("node_id") == node_id
+            and response["result"].get("nonce") == envelope["nonce"]
+            and response["result"].get("state") == "prepared"
+        )
 
     async def _abort_uncommitted_primary(self) -> None:
         if not self.replication_pending:
