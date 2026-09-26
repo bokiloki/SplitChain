@@ -58,9 +58,11 @@ monotonic terms with ordered succession. The reference node now exchanges signed
 timeout votes and certificates, persists verified leadership alongside its ledger, fences old
 leaders, and lets a certified successor process writes with a surviving replica. CLI clients
 can follow a reachable leader endpoint. A candidate refuses promotion if either survivor has
-an uncommitted prepared mutation, incomplete signed history, a different ledger state or a
-different committed position. An uncertain commit is reported explicitly to the client.
-These conservative conditions can halt progress after a partial commit or partition; manual
+an unresolved prepared mutation, incomplete signed history, or a different ledger state.
+When one survivor has a committed signed entry and the other is prepared or behind, it
+replays that entry and checks matching state before voting. An uncertain commit is reported
+explicitly to the client. If neither survivor has committed, the pending record remains
+undecided rather than being treated as final. These conditions can halt progress after a partition; manual
 investigation and recovery may be required. The shared HMAC secret lets a compromised node
 impersonate any role, wall-clock ticks assume reasonably synchronized hosts, and the election
 transport does not yet use independent production-grade identities or Byzantine consensus.

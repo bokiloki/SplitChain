@@ -245,6 +245,49 @@ def test_auto_promotion_refuses_a_pending_or_divergent_peer():
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("committed_role", ["secondary", "tertiary"])
+def test_takeover_recovers_one_committed_and_one_prepared_replica(
+    tmp_path, committed_role
+):
+    async def scenario():
+        secondary = ReferenceNode(
+            state_path=tmp_path / "secondary.json", node_id="secondary",
+            role="secondary", cluster_secret=SECRET,
+        )
+        tertiary = ReferenceNode(
+            state_path=tmp_path / "tertiary.json", node_id="tertiary",
+            role="tertiary", cluster_secret=SECRET,
+        )
+        envelope = secondary.replication.sign("primary", 1, {
+            "method": "advance", "params": {"rounds": 1}
+        })
+        await secondary.prepare_replica(envelope)
+        await tertiary.prepare_replica(envelope)
+        await {"secondary": secondary, "tertiary": tertiary}[committed_role].commit_replica(
+            envelope
+        )
+        tick = int(time.time() // 2)
+        secondary.leadership.last_heartbeat_tick = tick - 4
+        tertiary.leadership.last_heartbeat_tick = tick - 4
+        async with websockets.serve(tertiary.handler, "127.0.0.1", 0) as server:
+            secondary.peer_urls = {
+                "tertiary": f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}"
+            }
+            await secondary.failover_step(tick)
+        assert secondary.leadership.leader == tertiary.leadership.leader == "secondary"
+        assert secondary.replication_pending is tertiary.replication_pending is None
+        assert secondary.ledger.snapshot() == tertiary.ledger.snapshot()
+        assert secondary._committed_position() == tertiary._committed_position() == 1
+        for role in ("secondary", "tertiary"):
+            restarted = ReferenceNode(
+                state_path=tmp_path / f"{role}.json", node_id=role,
+                role=role, cluster_secret=SECRET,
+            )
+            assert restarted.leadership.term == 1
+
+    asyncio.run(scenario())
+
+
 def test_tertiary_takeover_requires_returned_primary_as_witness(tmp_path):
     async def scenario():
         nodes = {

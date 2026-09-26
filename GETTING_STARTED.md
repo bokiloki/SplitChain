@@ -165,9 +165,10 @@ The experimental cluster exchanges signed heartbeats every two seconds and attem
 2/3-certified Primary → Secondary → Tertiary succession after three missed ticks.
 It requires two clean replicas with the same committed position and ledger state.
 `scplit rpc` follows a reachable leader endpoint for writes; use `--leader-url` when
-Compose's internal hostname cannot resolve from your client. An uncertain commit,
-prepared mutation, partition, or incomplete replica history can halt promotion and
-require manual recovery. This remains an unaudited research service, not a production
+Compose's internal hostname cannot resolve from your client. A survivor can recover
+another node's signed committed entry before a vote. An unresolved prepare on both
+survivors, a partition, or incomplete replica history can halt promotion and require
+manual recovery. This remains an unaudited research service, not a production
 failover system.
 
 Stop the environment with:

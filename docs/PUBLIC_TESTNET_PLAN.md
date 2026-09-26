@@ -10,8 +10,8 @@ must never be sold or presented as redeemable.
 The repository contains an experimental ledger, simulator, TLA+ safety model, CLI,
 three-node Compose reference cluster, and a quorum-certified leadership safety model.
 The current live replication path includes a conservative research failover and client
-routing prototype, but it can halt on uncertain commits, incomplete replica histories,
-or partitions. The cluster uses a shared HMAC secret and loopback endpoints. These controls
+routing prototype. It can reconcile a committed signed entry from one survivor to another,
+but can halt on unresolved prepares, incomplete replica histories, or partitions. The cluster uses a shared HMAC secret and loopback endpoints. These controls
 are insufficient for an
 internet-facing public testnet. The broader DistOPS and TrueLies ecosystem remains
 research work and is not a prerequisite for the first ledger-only testnet.
@@ -48,7 +48,7 @@ separate valueless units; copying balances to mainnet requires a new explicit de
 
 ## Immediate engineering sequence
 
-1. Harden the research failover with recovery from partial commits and partitions,
+1. Harden the research failover with recovery from unresolved prepares and partitions,
    cross-host clock/identity design, replica catch-up, and three-node restart trials.
 2. Draft the issuance/genesis RFC and add supply-cap tests before a testnet genesis.
 3. Replace the shared cluster secret with distinct node identities and encrypted
