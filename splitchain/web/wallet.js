@@ -160,4 +160,7 @@
     } catch (error) { note(error.message); }
   });
   refresh().catch(() => {});
+  setInterval(() => {
+    if (document.visibilityState === 'visible') refresh().catch(() => {});
+  }, 15000);
 })();
