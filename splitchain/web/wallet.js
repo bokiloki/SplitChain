@@ -45,9 +45,18 @@
     if (!branches.length) { holder.textContent = 'No pending transfers for this account.'; return; }
     for (const b of branches) {
       const row = document.createElement('div'); row.className = 'wallet-transfer';
+      const title = document.createElement('strong');
+      title.textContent = `${b.value} test units · ${b.sender === account ? 'Sending' : 'Receiving'}`;
       const details = document.createElement('p');
-      details.textContent = `${b.value} test units · ${b.state} · ${b.sender} → ${b.receiver} · offer ${b.branch_id} · expires round ${b.expires_round}`;
-      row.append(details);
+      details.textContent = `${b.sender} → ${b.receiver} · expires in ${Math.max(0, b.expires_round - ledger.round)} rounds`;
+      const progress = document.createElement('div'); progress.className = 'wallet-progress';
+      progress.setAttribute('aria-label', `Transfer state: ${b.state}`);
+      for (const [index, label] of ['Offer', 'Accept', 'Commit', 'Final'].entries()) {
+        const step = document.createElement('span'); step.textContent = label;
+        if (index <= ['offered', 'accepted', 'committed', 'final'].indexOf(b.state)) step.className = 'done';
+        progress.append(step);
+      }
+      row.append(title, details, progress);
       let method, params;
       if (b.receiver === account && b.state === 'offered') { method = 'accept'; params = {branch_id:b.branch_id, receiver:account}; }
       if (b.sender === account && b.state === 'accepted') { method = 'commit'; params = {branch_id:b.branch_id, sender:account, payload:{}}; }
@@ -69,9 +78,12 @@
       $('height').textContent = String(ledger.canonical_head.height);
       $('round').textContent = String(ledger.round);
       $('network-id').textContent = networkId;
+      $('wallet-balance').textContent = `Updated ${new Date().toLocaleTimeString()} · round ${ledger.round}`;
       if (key) {
         const total = ledger.balances[account] || 0, locked = ledger.locked[account] || 0;
-        $('wallet-balance').textContent = `${total} test units · ${total - locked} available · ${locked} reserved`;
+        $('wallet-total').textContent = total.toLocaleString();
+        $('wallet-available').textContent = (total - locked).toLocaleString();
+        $('wallet-reserved').textContent = locked.toLocaleString();
         updateBranches(ledger);
       }
       return ledger;
@@ -84,6 +96,7 @@
     $('wallet-credential').value = ''; $('wallet-account').value = '';
     $('wallet-active').hidden = true; $('wallet-login').hidden = false;
     $('wallet-balance').textContent = ''; $('wallet-branches').replaceChildren();
+    for (const id of ['wallet-total','wallet-available','wallet-reserved']) $(id).textContent = '—';
     note('Wallet disconnected. Credentials were kept only in this tab.');
   }
   async function connect() {
@@ -136,6 +149,22 @@
     finally { busy = false; }
   }
   $('wallet-connect').addEventListener('click', async () => { try { await connect(); } catch (error) { note(error.message); } });
+  $('wallet-import-button').addEventListener('click', () => $('wallet-import').click());
+  $('wallet-import').addEventListener('change', async event => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      if (file.size > 2048) throw Error('Wallet file is too large');
+      const document = JSON.parse(await file.text());
+      if (document.schema !== 'splitchain-wallet-enrollment/v1' || document.network_id !== networkId ||
+          !/^[a-z][a-z0-9_]{2,31}$/.test(document.account) || !/^[0-9a-f]{64}$/.test(document.credential))
+        throw Error('Wallet file does not match this testnet');
+      $('wallet-account').value = document.account;
+      $('wallet-credential').value = document.credential;
+      note('Private file loaded locally. Connect when the account is active.');
+    } catch (error) { note(error.message); }
+    finally { event.target.value = ''; }
+  });
   $('wallet-disconnect').addEventListener('click', disconnect);
   $('wallet-copy').addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(account); note('Account ID copied.'); }
@@ -163,4 +192,7 @@
   setInterval(() => {
     if (document.visibilityState === 'visible') refresh().catch(() => {});
   }, 15000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refresh().catch(() => {});
+  });
 })();

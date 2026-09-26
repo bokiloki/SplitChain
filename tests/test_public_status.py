@@ -33,6 +33,10 @@ def test_public_endpoint_restricts_methods_and_paths(monkeypatch):
             assert response.headers.get("Cache-Control") == "no-store"
             assert b"crypto.getRandomValues" in page
             assert b"operator approval" in page
+        with urlopen(url + "/join-nodes") as response:
+            page = response.read()
+            assert b"Admission is not live yet" in page
+            assert b"public-invite.json" in page
         with urlopen(url + "/downloads") as response:
             downloads = response.read()
             assert response.headers.get_content_type() == "text/html"
