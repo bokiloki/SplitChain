@@ -13,8 +13,8 @@ from .model import GenesisConfig, ProtocolError
 def manifest(base: str, genesis: GenesisConfig) -> dict:
     address = urlsplit(base)
     if (address.scheme != "https" or not address.hostname or address.username
-            or address.password or address.query or address.fragment or address.path != "/"):
-        raise ProtocolError("bootstrap address must be an HTTPS origin ending in /")
+            or address.password or address.query or address.fragment or not address.path.endswith("/")):
+        raise ProtocolError("bootstrap address must be an HTTPS origin or URL ending in /")
     return {
         "schema": "splitchain-bootstrap/v1",
         "network_id": genesis.network_id,
@@ -22,7 +22,7 @@ def manifest(base: str, genesis: GenesisConfig) -> dict:
         "manifest_url": urljoin(base, ".well-known/splitchain-testnet.json"),
         "genesis_url": urljoin(base, "genesis.json"),
         "status_url": urljoin(base, "status"),
-        "rpc_url": f"wss://{address.netloc}/rpc",
+        "rpc_url": f"wss://{address.netloc}{address.path}rpc",
         "units": "valueless-testnet",
     }
 
