@@ -9,7 +9,11 @@ import pytest
 
 from splitchain.auth import RequestAuthenticator
 from splitchain.distributor import (
-    DistributionError, Distributor, credential, plan_for, prepare,
+    DistributionError,
+    Distributor,
+    credential,
+    plan_for,
+    prepare,
 )
 from splitchain.model import GenesisConfig, Ledger
 
@@ -85,7 +89,7 @@ def test_complete_funding_and_restart_never_double_pays(tmp_path):
 
 
 def test_lost_offer_response_reconciles_without_duplicate(tmp_path):
-    registry, output, plan = setup_batch(tmp_path, count=1)
+    registry, output, _ = setup_batch(tmp_path, count=1)
     accounts = json.loads(registry.read_text())
     ledger = Ledger(genesis=genesis())
     auth = RequestAuthenticator(accounts)
