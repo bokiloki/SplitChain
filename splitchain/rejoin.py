@@ -117,3 +117,65 @@ class RejoinQueue:
                 parent = event.digest
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ProtocolError("invalid rejoin queue") from exc
+
+
+class RejoinHistory:
+    """Append-only verified event history served to nodes catching up."""
+
+    def __init__(self, path: str | Path, genesis_digest: str, epoch_digest: str) -> None:
+        self.path = Path(path)
+        self.genesis_digest = genesis_digest
+        self.epoch_digest = epoch_digest
+        self.events: list[RejoinEnvelope] = []
+        if self.path.exists():
+            self._load()
+
+    def append(self, message: dict) -> RejoinEnvelope:
+        event = RejoinEnvelope.create(
+            len(self.events) + 1,
+            self.events[-1].digest if self.events else self.genesis_digest,
+            message,
+        )
+        self.events.append(event)
+        self._save()
+        return event
+
+    def export_since(self, sequence: int) -> tuple[RejoinEnvelope, ...]:
+        if type(sequence) is not int or sequence < 0 or sequence > len(self.events):
+            raise ProtocolError("invalid rejoin history position")
+        return tuple(self.events[sequence:])
+
+    def _document(self) -> dict:
+        return {"schema": "splitchain/rejoin-history/v1",
+                "genesis_digest": self.genesis_digest, "epoch_digest": self.epoch_digest,
+                "events": [asdict(event) for event in self.events]}
+
+    def _save(self) -> None:
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        document = self._document()
+        document["digest"] = protocol_digest("splitchain/rejoin-history/v1", document)
+        temporary = self.path.with_name(f".{self.path.name}.tmp")
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(document, stream, sort_keys=True, separators=(",", ":"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, self.path)
+
+    def _load(self) -> None:
+        try:
+            document = json.loads(self.path.read_text())
+            digest = document.pop("digest")
+            if (digest != protocol_digest("splitchain/rejoin-history/v1", document)
+                    or document["schema"] != "splitchain/rejoin-history/v1"
+                    or document["genesis_digest"] != self.genesis_digest
+                    or document["epoch_digest"] != self.epoch_digest):
+                raise ProtocolError("invalid rejoin history")
+            parent = self.genesis_digest
+            for raw in document["events"]:
+                event = RejoinEnvelope(**raw)
+                event.verify(len(self.events) + 1, parent)
+                self.events.append(event)
+                parent = event.digest
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ProtocolError("invalid rejoin history") from exc
