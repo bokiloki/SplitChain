@@ -21,7 +21,8 @@ from .transport import PeerRegistry, TLSMaterial
 
 class BetPeerRelay:
     def __init__(self, node_id: str, socket_path: str | Path,
-                 peers: dict[str, str], registry: PeerRegistry, tls: TLSMaterial) -> None:
+                 peers: dict[str, str], registry: PeerRegistry, tls: TLSMaterial,
+                 pending_path: str | Path | None = None) -> None:
         if not node_id or node_id in peers or any(not url.startswith("wss://") for url in peers.values()):
             raise ProtocolError("bet relay requires distinct mutually authenticated peers")
         self.node_id = node_id
@@ -29,8 +30,34 @@ class BetPeerRelay:
         self.peers = peers.copy()
         self.registry = registry
         self.tls = tls
+        self.pending_path = Path(pending_path) if pending_path else None
         self.pending: dict[tuple[str, str], dict] = {}
         self.seen: set[str] = set()
+        if self.pending_path and self.pending_path.exists():
+            try:
+                items = json.loads(self.pending_path.read_text())
+                if not isinstance(items, list):
+                    raise TypeError
+                for item in items:
+                    peer, digest, message = item
+                    if (not isinstance(peer, str) or not isinstance(digest, str)
+                            or not isinstance(message, dict)):
+                        raise TypeError
+                    self.pending[(peer, digest)] = message
+            except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                raise ProtocolError("invalid relay retry checkpoint") from exc
+
+    def _save_pending(self) -> None:
+        if not self.pending_path:
+            return
+        self.pending_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        temporary = self.pending_path.with_name(f".{self.pending_path.name}.tmp")
+        temporary.write_text(json.dumps([
+            [peer, digest, message]
+            for (peer, digest), message in sorted(self.pending.items())
+        ], sort_keys=True, separators=(",", ":")))
+        temporary.chmod(0o600)
+        temporary.replace(self.pending_path)
 
     @staticmethod
     def _event(message: dict) -> tuple[str, BetCommit | BetSuffixReveal
@@ -93,8 +120,10 @@ class BetPeerRelay:
                     if reply.get("error") or reply.get("result") is None:
                         raise ProtocolError("peer rejected signed bet event")
             self.pending.pop((peer, digest), None)
+            self._save_pending()
         except (OSError, TimeoutError, ValueError, websockets.WebSocketException):
             self.pending[(peer, digest)] = message
+            self._save_pending()
 
     async def retry_pending(self) -> None:
         await asyncio.gather(*(
@@ -171,6 +200,7 @@ def main() -> None:
     parser.add_argument("--tls-cert", required=True)
     parser.add_argument("--tls-key", required=True)
     parser.add_argument("--tls-ca", required=True)
+    parser.add_argument("--pending", help="durable retry checkpoint")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
@@ -182,7 +212,7 @@ def main() -> None:
         peers[name] = url
     tls = TLSMaterial.from_values(args.tls_cert, args.tls_key, args.tls_ca)
     relay = BetPeerRelay(args.node_id, args.socket, peers,
-                         PeerRegistry.from_path(args.registry), tls)
+                         PeerRegistry.from_path(args.registry), tls, args.pending)
     asyncio.run(run_relay(relay, args.host, args.port))
 
 

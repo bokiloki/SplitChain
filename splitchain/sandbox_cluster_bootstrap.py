@@ -60,7 +60,7 @@ def bootstrap(genesis_path: Path, output: Path, container_uid: int | None = None
     }
     _write(shared / "manifest.json", json.dumps(manifest, sort_keys=True).encode(), 0o644)
     authority = generate_private_key(public_exponent=65537, key_size=2048)
-    now = datetime.now(timezone.utc)  # noqa: UP017 (Python 3.10 compatibility)
+    now = datetime.now(timezone.utc)
     ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "SplitChain isolated rehearsal")])
     ca = (x509.CertificateBuilder().subject_name(ca_name).issuer_name(ca_name)
           .public_key(authority.public_key()).serial_number(x509.random_serial_number())
@@ -124,7 +124,8 @@ def bootstrap(genesis_path: Path, output: Path, container_uid: int | None = None
         }
         command = ["--node-id", name, "--socket", "/socket/consensus.sock",
                    "--registry", "/shared/registry.json", "--tls-cert", "/node/tls.pem",
-                   "--tls-key", "/node/tls.key", "--tls-ca", "/shared/ca.pem"]
+                   "--tls-key", "/node/tls.key", "--tls-ca", "/shared/ca.pem",
+                   "--pending", "/state/relay-pending.json"]
         for peer in peers:
             if not peer.startswith(f"{name}="):
                 command += ["--peer", peer]
@@ -133,7 +134,7 @@ def bootstrap(genesis_path: Path, output: Path, container_uid: int | None = None
             "command": command,
             "depends_on": [f"sandbox-{name}"], "networks": ["isolated"],
             "volumes": [f"./{name}/socket:/socket", "./shared:/shared:ro",
-                        f"./{name}:/node:ro"],
+                        f"./{name}:/node:ro", f"./{name}/state:/state"],
         }
     _write(shared / "registry.json", json.dumps({"peers": registry}).encode(), 0o644)
     _write(output / "compose.json", json.dumps({"name": "splitchain-sandbox-rehearsal",

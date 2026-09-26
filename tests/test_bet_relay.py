@@ -46,3 +46,16 @@ def test_peer_relay_forwards_only_sandbox_verified_signed_commitments(monkeypatc
         assert sent.await_count == 2
 
     asyncio.run(scenario())
+
+
+def test_peer_relay_restores_durable_retry_checkpoint(tmp_path):
+    pending = tmp_path / "state" / "relay-pending.json"
+    message = {"method": "clock.heartbeat", "event": {"voter": "a"}}
+    relay = BetPeerRelay("primary", tmp_path / "sandbox.sock",
+                         {"secondary": "wss://secondary:8765"}, object(), object(), pending)
+    relay.pending[("secondary", "digest")] = message
+    relay._save_pending()
+    restored = BetPeerRelay("primary", tmp_path / "sandbox.sock",
+                            {"secondary": "wss://secondary:8765"}, object(), object(), pending)
+    assert restored.pending == relay.pending
+    assert pending.stat().st_mode & 0o077 == 0
