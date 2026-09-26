@@ -54,10 +54,19 @@
     .links a { border:1px solid var(--line); border-radius:8px; padding:9px 12px; text-decoration:none; }
     .footer { border-top:1px solid var(--line); padding:26px 0 40px; color:var(--muted); font-size:.88rem; }
     @media(max-width:800px) { .hero { grid-template-columns:1fr; padding-top:48px; } .orb { width:220px; } .grid,.steps { grid-template-columns:1fr; } .nav { align-items:flex-start; padding:15px 0; flex-direction:column; gap:9px; } }
+      .wallet-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:14px 0; }
+    .wallet-fields label { display:grid; gap:6px; color:var(--muted); font-size:.88rem; }
+    .wallet-fields input { min-width:0; width:100%; padding:12px; color:var(--ink); border:1px solid #528082; border-radius:9px; background:#081d29; font:inherit; }
+    .wallet-button, .wallet-transfer button { border:0; border-radius:9px; padding:11px 17px; font:700 .95rem system-ui; background:var(--accent); color:#082329; cursor:pointer; margin:5px 8px 5px 0; }
+    .wallet-button:hover,.wallet-transfer button:hover { background:#b3ffea; }
+    .wallet-transfer { border-top:1px solid var(--line); padding:14px 0; overflow-wrap:anywhere; }
+    .wallet-id { font:600 1.15rem ui-monospace,monospace; overflow-wrap:anywhere; color:var(--accent); }
+    [hidden] { display:none !important; }
+    @media(max-width:650px) { .wallet-fields { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
-  <header><div class="wrap nav"><a class="brand" href="__SPLITCHAIN_BASE__">SPLIT<span>CHAIN</span></a><nav class="navlinks" aria-label="Main navigation"><a href="#network">Network</a><a href="#join">Join</a><a href="#resources">Resources</a><a href="https://github.com/bokiloki/SplitChain">Source ↗</a></nav></div></header>
+  <header><div class="wrap nav"><a class="brand" href="__SPLITCHAIN_BASE__">SPLIT<span>CHAIN</span></a><nav class="navlinks" aria-label="Main navigation"><a href="#network">Network</a><a href="#join">Join</a><a href="#wallet">Wallet</a><a href="#resources">Resources</a><a href="https://github.com/bokiloki/SplitChain">Source ↗</a></nav></div></header>
   <main class="wrap">
     <section class="hero"><div><div class="eyebrow">Public sandbox · experimental protocol</div><h1>SplitChain<br>Testnet</h1><p class="lead">Try branch-based transfers, replicated ledger state, and three-round finality with test units. This is a valueless sandbox. It can be reset, and its balances have no claim on future coins.</p><div class="buttons"><a class="button" href="#join">Join the sandbox</a><a class="button secondary" href="__SPLITCHAIN_BASE__explore/genesis">Explore genesis</a></div></div><div class="orb" aria-hidden="true"><strong>SPLIT<br>↘&nbsp;&nbsp;↙<br>MERGE</strong></div></section>
     <div class="banner" role="note"><strong>Pilot notice:</strong> account access is provisioned by the operator. Three containers on one host do not provide independent validator resilience. The live network must be verified after deployment.</div>
@@ -68,23 +77,17 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install .
 scplit join-testnet --url __SPLITCHAIN_BASE__ --genesis configs/testnet-genesis.json</pre><p>After enrollment, use <code>__SPLITCHAIN_RPC__</code> with <code>scplit rpc</code>. See the <a href="https://github.com/bokiloki/SplitChain/blob/main/docs/ONE_HOST_PUBLIC_TESTNET.md">step-by-step transfer guide</a> for signed requests and operator setup.</p></section>
+    <section class="section" id="wallet"><div class="eyebrow">Browser wallet</div><h2>Send and receive test units</h2><p>Use the same public signed gateway as the Android wallet. Request an account ID and 64-character credential from the operator. Your credential stays in this browser tab and is cleared when you disconnect or close it. Use a trusted device.</p>
+      <p><a class="button secondary" href="https://github.com/bokiloki/SplitChain/releases/download/testnet-wallet-latest/SplitChain-Testnet-debug.apk">Download Android testnet APK ↗</a> <small>Experimental debug build. Install only if you trust this repository.</small></p><div class="card"><p id="wallet-message" role="status" aria-live="polite">Checking pinned testnet…</p>
+        <div id="wallet-login"><div class="wallet-fields"><label>Account ID<input id="wallet-account" autocomplete="off" spellcheck="false"></label><label>Private credential<input id="wallet-credential" type="password" autocomplete="off" spellcheck="false"></label></div><button class="wallet-button" id="wallet-connect" type="button">Connect wallet</button></div>
+        <div id="wallet-active" hidden><h3>Receive</h3><p>Share this account ID with the sender; accept their offer below.</p><div class="wallet-id" id="wallet-id"></div><button class="wallet-button" id="wallet-copy" type="button">Copy account ID</button><p id="wallet-balance"></p><button class="wallet-button" id="wallet-refresh" type="button">Refresh balance and offers</button>
+          <h3>Send</h3><div class="wallet-fields"><label>Recipient account ID<input id="wallet-recipient" autocomplete="off" spellcheck="false"></label><label>Whole test units<input id="wallet-amount" type="number" min="1" step="1"></label></div><p>An offer temporarily reserves the amount plus equal stake. The recipient accepts; you then commit.</p><button class="wallet-button" id="wallet-send" type="button">Create offer</button>
+          <h3>Pending transfers</h3><div id="wallet-branches"></div><p>Committed transfers become spendable after finality rounds.</p><details><summary>Advanced nonce setting</summary><p>If this credential was used elsewhere, enter a number greater than the last accepted nonce.</p><label>Next nonce <input id="wallet-nonce" type="number" min="0" step="1"></label></details><button class="wallet-button" id="wallet-disconnect" type="button">Disconnect and forget credential</button></div>
+      </div>
+    </section>
     <section class="section" id="resources"><div class="eyebrow">Reference links</div><h2>Inspect the network</h2><div class="links"><a href="__SPLITCHAIN_BASE__explore/genesis">Genesis & supply</a><a href="__SPLITCHAIN_BASE__explore/bootstrap">Join details</a><a href="__SPLITCHAIN_BASE__explore/status">Live ledger</a><a href="__SPLITCHAIN_BASE__explore/leadership">Leadership</a><a href="__SPLITCHAIN_BASE__explore/nodes">Node status</a><a href="https://github.com/bokiloki/SplitChain/blob/main/docs/PUBLIC_TESTNET_PLAN.md">Release gates ↗</a><a href="https://github.com/bokiloki/SplitChain">GitHub ↗</a></div></section>
   </main>
   <footer class="footer"><div class="wrap">SplitChain research sandbox · test units have no monetary value · <a href="https://github.com/bokiloki/SplitChain/issues">Report an issue ↗</a></div></footer>
-  <script>
-    (async () => {
-      const label = document.getElementById('node-state');
-      try {
-        const [statusResponse, genesisResponse] = await Promise.all([fetch('__SPLITCHAIN_BASE__status', {cache:'no-store'}), fetch('__SPLITCHAIN_BASE__genesis.json', {cache:'no-store'})]);
-        if (!statusResponse.ok || !genesisResponse.ok) throw Error('Unavailable');
-        const status = await statusResponse.json(); const genesis = await genesisResponse.json();
-        if (!status.result || !status.result.canonical_head) throw Error('Unavailable');
-        label.textContent = 'Responding via ' + status.source;
-        document.getElementById('height').textContent = String(status.result.canonical_head.height);
-        document.getElementById('round').textContent = String(status.result.round);
-        document.getElementById('network-id').textContent = genesis.network_id;
-      } catch (_) { label.textContent = 'Unavailable'; }
-    })();
-  </script>
+  <script src="__SPLITCHAIN_BASE__wallet.js" defer></script>
 </body>
 </html>
