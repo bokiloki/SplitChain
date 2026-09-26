@@ -1,5 +1,26 @@
 # Overlay: Docker Compose -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml
 services:
+  enrollment:
+    build: .
+    entrypoint: ["python", "-m", "splitchain.enrollment_web"]
+    environment:
+      TESTNET_ENROLLMENT_PASSWORD: "${TESTNET_ENROLLMENT_PASSWORD:?set a private 32+ character dashboard password}"
+      TESTNET_AUTH_FILE: /operator/auth/accounts.json
+      TESTNET_ENROLLMENT_QUEUE: /operator/enrollment-queue
+    volumes:
+      - ${AUTH_DIRECTORY:-/srv/splitchain-testnet/auth}:/operator/auth
+      - ${TESTNET_OPERATOR_DIR:-/srv/splitchain-testnet}/enrollment-queue:/operator/enrollment-queue
+      - ./configs/testnet-genesis.json:/etc/splitchain/testnet-genesis.json:ro
+    ports: ["127.0.0.1:8091:8091"]
+    read_only: true
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 96
+    mem_limit: 128m
+    cpus: 0.5
+    restart: unless-stopped
   distributor:
     profiles: ["operator"]
     build: .
@@ -8,6 +29,7 @@ services:
     volumes:
       # Mount the directory, not only accounts.json: preparation atomically replaces the file.
       - ${TESTNET_OPERATOR_DIR:-/srv/splitchain-testnet}:/operator
+      - ${AUTH_DIRECTORY:-/srv/splitchain-testnet/auth}:/operator/auth
       - ./configs/testnet-genesis.json:/etc/splitchain/testnet-genesis.json:ro
     user: "0:0"
     read_only: true
@@ -19,23 +41,23 @@ services:
     cpus: 0.5
     networks: [default]
   primary:
-    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json", "--genesis", "/etc/splitchain/testnet-genesis.json", "--auth-secrets", "/run/splitchain/accounts.json", "--node-id", "primary", "--role", "primary", "--peer", "secondary=ws://secondary:8765", "--peer", "tertiary=ws://tertiary:8765"]
+    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json", "--genesis", "/etc/splitchain/testnet-genesis.json", "--auth-secrets", "/run/splitchain/auth/accounts.json", "--node-id", "primary", "--role", "primary", "--peer", "secondary=ws://secondary:8765", "--peer", "tertiary=ws://tertiary:8765"]
     environment:
       SPLITCHAIN_PUBLIC_TRANSACTIONS: "1"
     volumes:
-      - ${AUTH_FILE:?set AUTH_FILE to an existing private accounts.json}:/run/splitchain/accounts.json:ro
+      - ${AUTH_DIRECTORY:-/srv/splitchain-testnet/auth}:/run/splitchain/auth:ro
   secondary:
-    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json", "--genesis", "/etc/splitchain/testnet-genesis.json", "--auth-secrets", "/run/splitchain/accounts.json", "--node-id", "secondary", "--role", "secondary", "--peer", "primary=ws://primary:8765", "--peer", "tertiary=ws://tertiary:8765"]
+    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json", "--genesis", "/etc/splitchain/testnet-genesis.json", "--auth-secrets", "/run/splitchain/auth/accounts.json", "--node-id", "secondary", "--role", "secondary", "--peer", "primary=ws://primary:8765", "--peer", "tertiary=ws://tertiary:8765"]
     environment:
       SPLITCHAIN_PUBLIC_TRANSACTIONS: "1"
     volumes:
-      - ${AUTH_FILE:?set AUTH_FILE to an existing private accounts.json}:/run/splitchain/accounts.json:ro
+      - ${AUTH_DIRECTORY:-/srv/splitchain-testnet/auth}:/run/splitchain/auth:ro
   tertiary:
-    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json", "--genesis", "/etc/splitchain/testnet-genesis.json", "--auth-secrets", "/run/splitchain/accounts.json", "--node-id", "tertiary", "--role", "tertiary", "--peer", "primary=ws://primary:8765", "--peer", "secondary=ws://secondary:8765"]
+    command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json", "--genesis", "/etc/splitchain/testnet-genesis.json", "--auth-secrets", "/run/splitchain/auth/accounts.json", "--node-id", "tertiary", "--role", "tertiary", "--peer", "primary=ws://primary:8765", "--peer", "secondary=ws://secondary:8765"]
     environment:
       SPLITCHAIN_PUBLIC_TRANSACTIONS: "1"
     volumes:
-      - ${AUTH_FILE:?set AUTH_FILE to an existing private accounts.json}:/run/splitchain/accounts.json:ro
+      - ${AUTH_DIRECTORY:-/srv/splitchain-testnet/auth}:/run/splitchain/auth:ro
   rpc:
     build: .
     entrypoint: ["python", "-m", "splitchain.public_rpc"]
@@ -60,9 +82,9 @@ services:
     entrypoint: ["python", "-m", "splitchain.round_clock"]
     command: []
     environment:
-      TESTNET_AUTH_FILE: /run/splitchain/accounts.json
+      TESTNET_AUTH_FILE: /run/splitchain/auth/accounts.json
     volumes:
-      - ${AUTH_FILE:?set AUTH_FILE to an existing private accounts.json}:/run/splitchain/accounts.json:ro
+      - ${AUTH_DIRECTORY:-/srv/splitchain-testnet/auth}:/run/splitchain/auth:ro
       - round-clock-data:/var/lib/splitchain
     read_only: true
     user: "65532:65532"

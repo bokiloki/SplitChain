@@ -32,7 +32,7 @@ def test_public_endpoint_restricts_methods_and_paths(monkeypatch):
             page = response.read()
             assert response.headers.get("Cache-Control") == "no-store"
             assert b"crypto.getRandomValues" in page
-            assert b"operator must approve" in page
+            assert b"operator approval" in page
         with urlopen(url + "/downloads") as response:
             downloads = response.read()
             assert response.headers.get_content_type() == "text/html"

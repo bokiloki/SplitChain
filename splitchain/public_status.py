@@ -9,7 +9,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 
 from websockets.exceptions import WebSocketException
 from websockets.sync.client import connect
@@ -20,6 +22,7 @@ from .model import GenesisConfig, ProtocolError
 BACKENDS = (
     "ws://primary:8765", "ws://secondary:8765", "ws://tertiary:8765",
 )
+ENROLLMENT_BACKEND = "http://enrollment:8090"
 ROUTES = {"/status": "status", "/leadership": "cluster.leadership"}
 EXPLORER_PAGES = {"/explore/genesis", "/explore/status", "/explore/leadership", "/explore/bootstrap", "/explore/nodes"}
 _nodes_limits: dict[str, tuple[float, int]] = {}
@@ -139,7 +142,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'")
+            self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -216,6 +219,25 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, result)
 
     def do_POST(self) -> None:
+        if self.path in ("/enroll", "/enroll/check"):
+            try:
+                length = int(self.headers.get("Content-Length", "-1"))
+                if not 0 < length <= 2048:
+                    self._send(413, {"error": "invalid request length"})
+                    return
+                route = "/request" if self.path == "/enroll" else "/check"
+                request = Request(ENROLLMENT_BACKEND + route, data=self.rfile.read(length),
+                                  headers={"Content-Type": "application/json",
+                                           "X-Client-IP": self.headers.get("X-Real-IP", self.client_address[0])},
+                                  method="POST")
+                with urlopen(request, timeout=4) as response:
+                    result = json.load(response)
+                self._send(200, result)
+            except HTTPError as exc:
+                self._send(exc.code, {"error": "enrollment request rejected"})
+            except (URLError, OSError, ValueError, TimeoutError):
+                self._send(503, {"error": "enrollment service unavailable"})
+            return
         self._send(405, {"error": "transaction RPC is unavailable on the public endpoint"})
 
     def _send(self, status: int, value: dict) -> None:
