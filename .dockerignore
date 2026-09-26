@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+**/__pycache__/
+**/.pytest_cache/
+**/.venv/
+testnet-private/
+*.pem
+*.key
+*.crt
+*.csr
+*.srl
+*.p12
+*.pfx

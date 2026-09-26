@@ -1,0 +1,60 @@
+# Closed, valueless three-host pilot: run this file once on each independent host.
+# Copy .env.testnet.example to .env.testnet and set the two remote peer URLs.
+services:
+  node:
+    build: .
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+      - --state
+      - /var/lib/splitchain/ledger.json
+      - --node-id
+      - ${NODE_ROLE:?set NODE_ROLE}
+      - --role
+      - ${NODE_ROLE:?set NODE_ROLE}
+      - --genesis
+      - /etc/splitchain/testnet-genesis.json
+      - --node-key
+      - /run/splitchain/node.pem
+      - --peer-keys
+      - /run/splitchain/peer-keys.json
+      - --tls-cert
+      - /run/splitchain/node.crt
+      - --tls-key
+      - /run/splitchain/node.key
+      - --tls-ca
+      - /run/splitchain/ca.crt
+      - --tls-peers
+      - /run/splitchain/peers.json
+      - --peer
+      - ${PEER_A:?set PEER_A as role=wss://hostname:8765}
+      - --peer
+      - ${PEER_B:?set PEER_B as role=wss://hostname:8765}
+    ports:
+      - "${BIND_IP:?set BIND_IP to the private network address}:8765:8765"
+    volumes:
+      - ${STATE_DIR:?set STATE_DIR}:/var/lib/splitchain
+      - ${KEYS_DIR:?set KEYS_DIR}:/run/splitchain:ro
+      - ./configs/testnet-genesis.json:/etc/splitchain/testnet-genesis.json:ro
+    user: "65532:65532"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.50
+    healthcheck:
+      # TCP liveness only; use authenticated cluster.leadership for readiness.
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8765), 3).close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      options: {max-size: "10m", max-file: "3"}

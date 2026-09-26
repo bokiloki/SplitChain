@@ -1,4 +1,6 @@
 .env
+.env.testnet
+testnet-private/
 __pycache__/
 *.py[cod]
 .pytest_cache/
