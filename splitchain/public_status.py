@@ -65,7 +65,7 @@ class Handler(BaseHTTPRequestHandler):
                     os.environ.get("TESTNET_GENESIS_FILE", "/etc/splitchain/testnet-genesis.json")
                 ).read_text(encoding="utf-8")))
                 result = (manifest(os.environ.get(
-                    "TESTNET_BOOTSTRAP_URL", "https://splitchain.bokiloki.ddns.net/"
+                    "TESTNET_BOOTSTRAP_URL", "https://bokiloki.ddns.net/"
                 ), genesis) if self.path.endswith("splitchain-testnet.json") else genesis.public())
             except (OSError, ValueError, ProtocolError):
                 self._send(503, {"error": "genesis unavailable"})

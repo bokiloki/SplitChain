@@ -41,7 +41,7 @@ docker compose --env-file .env.single-host \
   -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml ps
 ```
 
-The sample `PUBLIC_TESTNET_DOMAIN` is `splitchain.bokiloki.ddns.net`. Point it
+The sample `PUBLIC_TESTNET_DOMAIN` is `bokiloki.ddns.net`. Point it
 to your public address and ensure your HTTPS certificate covers it. Leave the
 random cluster secret in place; a changed
 secret breaks replica authentication. Keep `accounts.json` private; only the
@@ -72,7 +72,7 @@ disagree. With all nodes on one host, a host crash stops the whole cluster.
 ## HTTPS: existing Nginx or bundled Caddy
 
 If Nginx already owns ports 80/443 on your server, add these locations **inside
-the HTTPS server block for `splitchain.bokiloki.ddns.net` and reload Nginx.
+the HTTPS server block for `bokiloki.ddns.net` and reload Nginx.
 If that hostname already serves another website, save its existing configuration
 before replacing its root route. Keep its
 existing certificate renewal and HTTP-to-HTTPS redirect. The upstream binds
@@ -96,7 +96,7 @@ location = /leadership {
 }
 ```
 
-Then request `https://splitchain.bokiloki.ddns.net/`. For a **dedicated testnet
+Then request `https://bokiloki.ddns.net/`. For a **dedicated testnet
 hostname** on a server with free ports 80/443, set `PUBLIC_TESTNET_DOMAIN` and
 start the bundled Caddy profile instead:
 
@@ -106,8 +106,8 @@ docker compose --env-file .env.single-host --profile caddy \
 ```
 
 Caddy obtains and renews a public certificate for the configured hostname.
-Check `https://splitchain.bokiloki.ddns.net/` and
-`https://splitchain.bokiloki.ddns.net/.well-known/splitchain-testnet.json`.
+Check `https://bokiloki.ddns.net/` and
+`https://bokiloki.ddns.net/.well-known/splitchain-testnet.json`.
 Do not start the Caddy profile while
 Nginx is bound to 80/443; use the existing Nginx configuration above.
 
@@ -129,7 +129,7 @@ machine-readable manifest at `/.well-known/splitchain-testnet.json` and verify
 `/genesis.json` against the copy shipped in this repository:
 
 ```bash
-scplit join-testnet --url https://splitchain.bokiloki.ddns.net/ \
+scplit join-testnet --url https://bokiloki.ddns.net/ \
   --genesis configs/testnet-genesis.json
 ```
 

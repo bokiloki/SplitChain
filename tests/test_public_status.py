@@ -20,7 +20,7 @@ def test_public_endpoint_restricts_methods_and_paths(monkeypatch):
     monkeypatch.setattr(public_status, "fetch_read_only", fetch)
     genesis_path = Path(__file__).parents[1] / "configs/testnet-genesis.json"
     monkeypatch.setenv("TESTNET_GENESIS_FILE", str(genesis_path))
-    monkeypatch.setenv("TESTNET_BOOTSTRAP_URL", "https://splitchain.bokiloki.ddns.net/")
+    monkeypatch.setenv("TESTNET_BOOTSTRAP_URL", "https://bokiloki.ddns.net/")
     server = HTTPServer(("127.0.0.1", 0), public_status.Handler)
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -30,7 +30,7 @@ def test_public_endpoint_restricts_methods_and_paths(monkeypatch):
             assert b"Join with a pinned genesis" in response.read()
         with urlopen(url + "/.well-known/splitchain-testnet.json") as response:
             genesis = GenesisConfig.from_dict(json.loads(genesis_path.read_text()))
-            assert json.load(response) == manifest("https://splitchain.bokiloki.ddns.net/", genesis)
+            assert json.load(response) == manifest("https://bokiloki.ddns.net/", genesis)
         with urlopen(url + "/genesis.json") as response:
             assert json.load(response)["max_supply"] == 21_000_000
         with urlopen(url + "/status") as response:

@@ -94,7 +94,7 @@ def main() -> None:
     keygen.add_argument("--role", required=True, choices=("primary", "secondary", "tertiary"))
     keygen.add_argument("--output", required=True, help="new private PEM file, never overwritten")
     bootstrap = sub.add_parser("join-testnet", help="verify HTTPS bootstrap against local genesis")
-    bootstrap.add_argument("--url", default="https://splitchain.bokiloki.ddns.net/")
+    bootstrap.add_argument("--url", default="https://bokiloki.ddns.net/")
     bootstrap.add_argument("--genesis", required=True, help="reviewed local genesis JSON path")
 
     args = parser.parse_args()
