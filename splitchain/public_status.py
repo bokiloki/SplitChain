@@ -47,7 +47,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/":
             try:
                 body = (Path(__file__).parent / "web/testnet.html").read_bytes()
-            except OSError:
+                base = os.environ.get("TESTNET_BOOTSTRAP_URL", "https://bokiloki.ddns.net/splitchain/")
+                genesis = GenesisConfig.from_dict(json.loads(Path(os.environ.get("TESTNET_GENESIS_FILE", "/etc/splitchain/testnet-genesis.json")).read_text(encoding="utf-8")))
+                rpc = manifest(base, genesis)["rpc_url"]
+                body = body.replace(b"__SPLITCHAIN_BASE__", base.encode()).replace(b"__SPLITCHAIN_RPC__", rpc.encode())
+            except (OSError, ValueError, ProtocolError):
                 self._send(503, {"error": "testnet page unavailable"})
                 return
             self.send_response(200)
@@ -65,7 +69,7 @@ class Handler(BaseHTTPRequestHandler):
                     os.environ.get("TESTNET_GENESIS_FILE", "/etc/splitchain/testnet-genesis.json")
                 ).read_text(encoding="utf-8")))
                 result = (manifest(os.environ.get(
-                    "TESTNET_BOOTSTRAP_URL", "https://splitchain.bokiloki.ddns.net/"
+                    "TESTNET_BOOTSTRAP_URL", "https://bokiloki.ddns.net/splitchain/"
                 ), genesis) if self.path.endswith("splitchain-testnet.json") else genesis.public())
             except (OSError, ValueError, ProtocolError):
                 self._send(503, {"error": "genesis unavailable"})
