@@ -75,6 +75,33 @@ docker compose --env-file .env.single-host \
   --profile operator run --rm distributor report
 ```
 
+### If the first offer reports a 2/3 quorum failure
+
+Do **not** rerun `prepare`, remove the node volumes, or send a second manual
+offer. The distributor now checks that the certified leader and a replica
+agree on the full ledger digest and replication position before funding. Run
+this read-only diagnostic after updating the distributor image:
+
+```bash
+docker compose --env-file .env.single-host \
+  -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml \
+  --profile operator run --build --rm distributor diagnose
+
+docker compose --env-file .env.single-host \
+  -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml ps
+
+docker compose --env-file .env.single-host \
+  -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml \
+  logs --tail=100 primary secondary tertiary rounds
+```
+
+Compare the node names, `leader`, `term`, `replication_nonce`, and
+`replication_digest` in the diagnostic output. At least one replica must
+match the certified leader. An `invalid or incomplete replication history`
+error or missing node needs investigation before attempting another payment.
+The output contains no wallet credentials and is suitable for sharing when
+asking for help. Keep the account registry and SMS drafts private.
+
 If funding stops, rerun the **same** `fund --wait-finality` command. It reads
 the ledger and a private `/srv/splitchain-testnet/distribution/state.json`
 journal, so finalized and committed payments are not repeated. A lost RPC

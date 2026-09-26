@@ -235,6 +235,68 @@ class Distributor:
                 continue
         raise DistributionError("no testnet node returned a valid ledger status")
 
+    async def inspect_node(self, backend: str) -> dict:
+        """Read only positions and digests; never print authentication material."""
+        import hashlib
+
+        name = backend.removeprefix("ws://").split(":")[0]
+        result = {"node": name}
+        for method, params in (("status", {}), ("cluster.leadership", {}),
+                               ("replica.history", {"from": 0})):
+            try:
+                async with asyncio.timeout(4):
+                    async with websockets.connect(backend, max_size=64 * 1024) as socket:
+                        request = {"id": uuid.uuid4().hex[:12], "method": method,
+                                   "params": params}
+                        await socket.send(json.dumps(request))
+                        response = json.loads(await socket.recv())
+                if "error" in response:
+                    result[method + "_error"] = response["error"].get("message", "RPC rejected")
+                    continue
+                value = response["result"]
+                if method == "status":
+                    result["height"] = value["canonical_head"]["height"]
+                    result["round"] = value["round"]
+                    result["ledger_digest"] = hashlib.sha256(canonical_json(value)).hexdigest()
+                    result["genesis_matches"] = value.get("genesis") == self.genesis.public()
+                elif method == "cluster.leadership":
+                    result["leader"] = value["leader"]
+                    result["term"] = value["term"]
+                    result["leadership_nonce"] = value.get("committed_nonce")
+                else:
+                    result["replication_nonce"] = value["nonce"]
+                    result["replication_digest"] = value["ledger_digest"]
+            except (OSError, TimeoutError, websockets.WebSocketException,
+                    ValueError, KeyError, TypeError) as exc:
+                result[method + "_error"] = type(exc).__name__
+        return result
+
+    async def diagnose(self, *, attempts: int = 1) -> list[dict]:
+        """Require a certified leader and one matching replica before any spending."""
+        rows = []
+        for attempt in range(attempts):
+            rows = list(await asyncio.gather(*(self.inspect_node(url) for url in BACKENDS)))
+            for leader in rows:
+                if (leader.get("leader") != leader["node"] or
+                        not leader.get("genesis_matches") or
+                        leader.get("replication_digest") != leader.get("ledger_digest") or
+                        leader.get("replication_nonce") is None):
+                    continue
+                for follower in rows:
+                    if (follower["node"] == leader["node"] or
+                            not follower.get("genesis_matches")):
+                        continue
+                    same = all(follower.get(key) == leader.get(key) for key in (
+                        "leader", "term", "replication_nonce", "replication_digest"))
+                    if same and follower.get("ledger_digest") == leader["ledger_digest"]:
+                        if attempts == 1:
+                            print(json.dumps(rows, indent=2, sort_keys=True))
+                        return rows
+            if attempt + 1 < attempts:
+                await asyncio.sleep(2)
+        print(json.dumps(rows, indent=2, sort_keys=True))
+        raise DistributionError("no healthy leader and matching replica; inspect node logs and replication positions before funding")
+
     def branch(self, ledger: dict, recipient: str) -> dict | None:
         branches = [b for b in ledger["branches"] if b["sender"] == SENDER
                     and b["receiver"] == recipient]
@@ -334,7 +396,7 @@ class Distributor:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Operator batch distributor for valueless SplitChain test units")
-    parser.add_argument("command", choices=("prepare", "fund", "report"))
+    parser.add_argument("command", choices=("prepare", "fund", "report", "diagnose"))
     parser.add_argument("--registry", type=Path, default=Path("/operator/accounts.json"))
     parser.add_argument("--output", type=Path, default=Path("/operator/distribution"))
     parser.add_argument("--genesis", type=Path, default=Path("/etc/splitchain/testnet-genesis.json"))
@@ -353,7 +415,9 @@ def main() -> None:
         else:
             with exclusive(args.output):
                 distributor = Distributor(args.registry, args.output, genesis)
-                if args.command == "report":
+                if args.command == "diagnose":
+                    asyncio.run(distributor.diagnose())
+                elif args.command == "report":
                     ledger = asyncio.run(distributor.snapshot())
                     for actor in distributor.plan["recipients"]:
                         branch = distributor.branch(ledger, actor)
@@ -366,6 +430,7 @@ def main() -> None:
                         distributor.state["last_nonces"][SENDER] = max(
                             previous, args.faucet_next_nonce - 1)
                         distributor.save()
+                    asyncio.run(distributor.diagnose(attempts=3))
                     asyncio.run(distributor.run(wait_finality=args.wait_finality))
     except (DistributionError, OSError, ValueError, KeyError) as exc:
         parser.exit(1, f"distribution stopped: {exc}\n")

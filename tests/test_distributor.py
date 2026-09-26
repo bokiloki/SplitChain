@@ -139,3 +139,26 @@ def test_full_100_friend_batch_totals_10000_units(tmp_path):
     assert len(ledger.branches) == 100
     assert all(ledger.balances[a] == 100 for a in plan["recipients"])
     assert ledger.balances["testnet_faucet"] == 14_000_000 - 10_000
+
+
+def test_diagnose_requires_leader_and_matching_replica(tmp_path):
+    registry, output, _ = setup_batch(tmp_path, count=1)
+    distributor = Distributor(registry, output, genesis(), rpc_interval=0)
+    expected = {"leader": "primary", "term": 1, "replication_nonce": 12,
+                "replication_digest": "same", "ledger_digest": "same", "genesis_matches": True}
+
+    async def inspect(backend):
+        node = backend.removeprefix("ws://").split(":")[0]
+        return {"node": node, **expected,
+                "replication_digest": "different" if node != "primary" else "same"}
+
+    distributor.inspect_node = inspect
+    with pytest.raises(DistributionError, match="no healthy leader"):
+        asyncio.run(distributor.diagnose())
+
+    async def repaired(backend):
+        node = backend.removeprefix("ws://").split(":")[0]
+        return {"node": node, **expected}
+
+    distributor.inspect_node = repaired
+    assert len(asyncio.run(distributor.diagnose())) == 3
