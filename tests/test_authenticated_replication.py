@@ -47,7 +47,7 @@ def test_signed_test_tokens_replicate_and_replay_is_fenced_on_restart(tmp_path):
                                             "params": offer["params"]}))["error"]
             result = await primary.dispatch(offer)
             branch_id = result["result"]["branch_id"]
-            assert (await primary.dispatch(offer))["error"]["message"] == "request nonce was already used"
+            assert (await primary.dispatch(offer))["error"]["message"] == "invalid request authentication"
             assert "result" in await primary.dispatch(signed(
                 "accept", {"branch_id": branch_id, "receiver": "bob"}, "bob", 1))
             assert "result" in await primary.dispatch(signed(

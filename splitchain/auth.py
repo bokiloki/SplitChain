@@ -42,13 +42,13 @@ class RequestAuthenticator:
             secret = self._secrets[actor]
         except (KeyError, TypeError, ValueError) as exc:
             raise ProtocolError("invalid request authentication") from exc
-        if nonce <= self._nonces.get(actor, -1):
-            raise ProtocolError("request nonce was already used")
         expected = hmac.new(
             secret, self.message(request, actor, nonce), hashlib.sha256
         ).hexdigest()
         if not hmac.compare_digest(expected, signature):
-            raise ProtocolError("invalid request signature")
+            raise ProtocolError("invalid request authentication")
+        if nonce <= self._nonces.get(actor, -1):
+            raise ProtocolError("invalid request authentication")
         if record:
             self._nonces[actor] = nonce
         return actor

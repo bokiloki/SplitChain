@@ -1,7 +1,7 @@
 import json
-from http.server import HTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
-from threading import Thread
+from threading import Event, Thread
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -21,7 +21,7 @@ def test_public_endpoint_restricts_methods_and_paths(monkeypatch):
     genesis_path = Path(__file__).parents[1] / "configs/testnet-genesis.json"
     monkeypatch.setenv("TESTNET_GENESIS_FILE", str(genesis_path))
     monkeypatch.setenv("TESTNET_BOOTSTRAP_URL", "https://bokiloki.ddns.net/")
-    server = HTTPServer(("127.0.0.1", 0), public_status.Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), public_status.Handler)
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     url = f"http://127.0.0.1:{server.server_port}"
@@ -66,6 +66,36 @@ def test_public_endpoint_restricts_methods_and_paths(monkeypatch):
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_slow_status_request_does_not_block_other_connections(monkeypatch):
+    entered, release = Event(), Event()
+
+    def slow_fetch(method):
+        entered.set()
+        assert release.wait(3)
+        return {"result": {"method": method}}
+
+    monkeypatch.setattr(public_status, "fetch_read_only", slow_fetch)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), public_status.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_port}"
+    slow = Thread(target=lambda: urlopen(url + "/status", timeout=4).read(), daemon=True)
+    try:
+        slow.start()
+        assert entered.wait(2)
+        with urlopen(url + "/downloads", timeout=2) as response:
+            assert response.status == 200
+            assert b"SplitChain-Testnet-debug.apk" in response.read()
+        assert slow.is_alive()
+    finally:
+        release.set()
+        slow.join(timeout=5)
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    assert not slow.is_alive()
 
 
 def test_node_status_marks_missing_or_different_heads(monkeypatch):

@@ -11,6 +11,7 @@ vars == <<balance, locked, state, sender, receiver, value, stake, round, commitR
           canonicalHeight, originHeight>>
 
 Init == /\ balance \in [Accounts -> 0..MaxValue]
+        /\ \E a \in Accounts : balance[a] >= 2
         /\ locked = [a \in Accounts |-> 0]
         /\ state = "none"
         /\ sender \in Accounts /\ receiver \in Accounts
@@ -32,7 +33,7 @@ Commit == /\ state = "accepted" /\ state' = "committed" /\ commitRound' = round
           /\ UNCHANGED <<balance, locked, sender, receiver, value, stake, round,
                           canonicalHeight, originHeight>>
 
-Tick == /\ state \in {"offered", "accepted", "committed"} /\ round' = round + 1
+Tick == /\ round' = round + 1
         /\ IF state = "committed" /\ round' - commitRound >= 3
               THEN /\ state' = "final"
                    /\ balance' = [balance EXCEPT ![sender] = @ - value, ![receiver] = @ + value]
@@ -46,7 +47,13 @@ Cancel == /\ state \in {"offered", "accepted"} /\ state' = "cancelled"
           /\ UNCHANGED <<balance, sender, receiver, value, stake, round, commitRound,
                           canonicalHeight, originHeight>>
 
-Next == (\E s, r \in Accounts, v \in 1..MaxValue: Offer(s, r, v)) \/ Accept \/ Commit \/ Tick \/ Cancel
+Reset == /\ state \in {"final", "cancelled", "expired"} /\ state' = "none"
+         /\ UNCHANGED <<balance, locked, sender, receiver, value, stake, round,
+                         commitRound, canonicalHeight, originHeight>>
+
+Next == (\E s, r \in Accounts, v \in 1..MaxValue: Offer(s, r, v)) \/ Accept \/ Commit \/ Tick \/ Cancel \/ Reset
+
+StateConstraint == round <= 6
 
 TypeOK == /\ state \in States /\ value \in Nat /\ stake \in Nat /\ round \in Nat
           /\ canonicalHeight \in Nat /\ originHeight \in Nat
