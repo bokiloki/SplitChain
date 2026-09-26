@@ -7,6 +7,8 @@ SplitChain is an **experimental protocol and distributed-computing research ecos
 **Release direction:** [public valueless testnet, then audited mainnet](docs/PUBLIC_TESTNET_PLAN.md).
 The testnet gates and proposed 21,000,000-unit cap / 7,000,000-unit reserve are
 documented there; issuance limits are not yet implemented in consensus code.
+For a closed three-host pilot with distinct signing keys and mutual TLS, see
+[independent node setup](docs/INDEPENDENT_NODES.md).
 
 <p align="center"><img src="docs/images/gallery/SplitChainEcoSystemOverview.png" alt="SplitChain ecosystem architecture" width="100%"></p>
 

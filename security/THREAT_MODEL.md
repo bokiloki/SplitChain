@@ -63,9 +63,11 @@ When one survivor has a committed signed entry and the other is prepared or behi
 replays that entry and checks matching state before voting. An uncertain commit is reported
 explicitly to the client. If neither survivor has committed, the pending record remains
 undecided rather than being treated as final. These conditions can halt progress after a partition; manual
-investigation and recovery may be required. The shared HMAC secret lets a compromised node
-impersonate any role, wall-clock ticks assume reasonably synchronized hosts, and the election
-transport does not yet use independent production-grade identities or Byzantine consensus.
+investigation and recovery may be required. The loopback Compose profile still shares one
+HMAC secret, so a compromised demo node can impersonate any role. A separate opt-in mode
+uses distinct Ed25519 signing keys, mutual TLS and pinned peer certificates for a closed
+independent-node pilot. Its wall-clock ticks assume synchronized hosts, and the protocol
+has not undergone independent review or reached Byzantine consensus.
 Internal Compose hostnames returned as routes may not resolve from a host client; use the CLI's
 `--leader-url` override in that case. Never expose this research cluster to untrusted networks.
 

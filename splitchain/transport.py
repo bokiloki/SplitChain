@@ -25,6 +25,14 @@ class PeerIdentity:
         "ecosystem.demo": ALLOWED_PEER_ROLES,
         "cluster.status": ALLOWED_PEER_ROLES,
         "cluster.leadership": ALLOWED_PEER_ROLES,
+        "cluster.heartbeat": frozenset({"primary", "secondary", "tertiary"}),
+        "cluster.timeout_vote": frozenset({"primary", "secondary", "tertiary"}),
+        "cluster.certificate": frozenset({"primary", "secondary", "tertiary"}),
+        "replica.prepare": frozenset({"primary", "secondary", "tertiary"}),
+        "replica.commit": frozenset({"primary", "secondary", "tertiary"}),
+        "replica.abort": frozenset({"primary", "secondary", "tertiary"}),
+        "replica.position": frozenset({"primary", "secondary", "tertiary"}),
+        "replica.history": frozenset({"primary", "secondary", "tertiary"}),
         "cluster.sync": frozenset({"primary", "overlord"}),
         "offer": frozenset({"client"}),
         "accept": frozenset({"client"}),
@@ -83,6 +91,12 @@ class PeerRegistry:
             return self._fingerprints[fingerprint]
         except KeyError as exc:
             raise ProtocolError("peer TLS certificate is not authorized") from exc
+
+    def has_node_role(self, node_id: str, role: str) -> bool:
+        return any(
+            peer.node_id == node_id and peer.roles == (role,)
+            for peer in self._fingerprints.values()
+        )
 
 
 @dataclass(frozen=True)
