@@ -31,6 +31,23 @@ services:
     mem_limit: 128m
     cpus: 0.25
     restart: unless-stopped
+  rounds:
+    build: .
+    entrypoint: ["python", "-m", "splitchain.round_clock"]
+    command: []
+    environment:
+      TESTNET_AUTH_FILE: /run/splitchain/accounts.json
+    volumes:
+      - ${AUTH_FILE:?set AUTH_FILE to an existing private accounts.json}:/run/splitchain/accounts.json:ro
+      - round-clock-data:/var/lib/splitchain
+    read_only: true
+    user: "65532:65532"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.25
+    restart: unless-stopped
   status:
     build: .
     entrypoint: ["python", "-m", "splitchain.public_status"]
@@ -58,5 +75,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  round-clock-data:
   caddy-testnet-data:
   caddy-testnet-config:

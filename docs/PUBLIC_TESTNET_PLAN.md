@@ -11,7 +11,9 @@ The repository contains an experimental ledger, simulator, TLA+ safety model, CL
 three-node Compose reference cluster, and a quorum-certified leadership safety model.
 The current live replication path includes a conservative research failover and client
 routing prototype. A curated single-host sandbox can accept signed HMAC account
-transfers through a restricted gateway. It can reconcile a committed signed entry from one survivor to another,
+transfers through a restricted gateway and advance rounds automatically. Accounts
+are provisioned by its operator and funded from preallocated valueless units.
+It can reconcile a committed signed entry from one survivor to another,
 but can halt on unresolved prepares, incomplete replica histories, or partitions. The cluster uses a shared HMAC secret and loopback endpoints. These controls
 are insufficient for an
 internet-facing public testnet. The broader DistOPS and TrueLies ecosystem remains

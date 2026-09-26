@@ -12,6 +12,8 @@ gateway permits only `offer`, `accept`, `commit`, and `cancel`. The leader and
 replicas verify account signatures and replay nonces. The operator creates
 accounts and distributes valueless test units manually; self-service enrollment,
 an automated faucet, incident procedures, and external review remain open.
+The private `rounds` service advances one round about every ten seconds, so a
+committed transfer normally reaches three-round finality after about 30 seconds.
 
 ## Server installation and startup
 
@@ -119,6 +121,27 @@ sudo python3 -c 'import json; print(json.load(open("/srv/splitchain-testnet/acco
 ```
 
 Distribute `bob.secret` only to Bob. Generate separate files for other actors.
+
+To enroll another tester, provision a new account credential. The script refuses
+to overwrite an account or credential. Because nodes mount a specific registry
+file inode, briefly stop them and recreate their containers after each registry
+update so all three read the same file:
+
+```bash
+sudo python3 scripts/add_testnet_account.py \
+  /srv/splitchain-testnet/accounts.json charlie \
+  /srv/splitchain-testnet/charlie.secret
+docker compose --env-file .env.single-host \
+  -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml \
+  stop primary secondary tertiary rounds
+docker compose --env-file .env.single-host \
+  -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml \
+  up -d --force-recreate primary secondary tertiary rounds
+```
+
+Give only `charlie.secret` to Charlie. The operator can then fund `charlie` by
+making a signed `offer` from `testnet_faucet`; Charlie signs `accept`, and the
+operator signs `commit`. No participant gets a claim on future mainnet coins.
 Never send `accounts.json` to clients.
 
 ```bash
@@ -133,16 +156,10 @@ scplit rpc commit --url wss://YOUR_TESTNET_DOMAIN/rpc \
   --actor testnet_faucet --secret-file ./faucet.secret --nonce 2
 ```
 
-The operator calls signed `advance --params '{"rounds":3}'` through the active
-leader's loopback node RPC (port 8765, 8766, or 8767), using actor
-`testnet_operator` and its private secret file. This finalizes the transfer
-after three rounds. The public gateway excludes `advance` and `cluster.sync`.
-
-```bash
-sudo python3 -c 'import json; print(json.load(open("/srv/splitchain-testnet/accounts.json"))["testnet_operator"])' > operator.secret
-scplit rpc advance --url ws://127.0.0.1:8765 --params '{"rounds":3}' \
-  --actor testnet_operator --secret-file ./operator.secret --nonce 1
-```
+The private round driver signs `advance` requests as `testnet_operator`. It
+persists its next nonce before submission, so restarting it does not reuse an
+earlier authorization. Check its logs and all three nodes' ledger heads if
+finality stalls. The public gateway excludes `advance` and `cluster.sync`.
 
 ## MikroTik RB4011: WAN ports
 
