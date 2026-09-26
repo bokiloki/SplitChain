@@ -148,6 +148,8 @@ her received balance becomes spendable. Example operator commands (keep
 `faucet.secret` private):
 
 ```bash
+umask 077
+sudo python3 -c 'import json; print(json.load(open("/srv/splitchain-testnet/accounts.json"))["testnet_faucet"])' > faucet.secret
 FAUCET_NONCE=$(date +%s%3N)
 scplit rpc offer --url wss://bokiloki.ddns.net/splitchain/rpc \
   --params '{"sender":"testnet_faucet","receiver":"tester_alice","value":10}' \
