@@ -8,7 +8,7 @@ from splitchain.membership import (
     Membership,
     StakeMembership,
 )
-from splitchain.model import ProtocolError
+from splitchain.model import GenesisConfig, Ledger, ProtocolError
 
 
 def test_six_member_joint_quorum_requires_both_memberships():
@@ -72,3 +72,19 @@ def test_stake_quorums_intersect_at_more_than_one_third_of_backing():
                 for voters in combinations("abcdef", count)
                 if stakes.approves(set(voters), 1)]
     assert all(len(a & b) >= 2 for a, b in combinations(approved, 2))
+
+
+def test_proposed_stake_allocations_are_backed_by_the_locked_genesis_reserve():
+    genesis = GenesisConfig.from_dict({
+        "schema": "splitchain-genesis/v1", "network_id": "test-stake", "max_supply": 21,
+        "allocations": {"faucet": 14, "reserve": 7}, "locked_accounts": ["reserve"],
+    })
+    ledger = Ledger(genesis=genesis)
+    membership = StakeMembership.from_locked_reserve(
+        ledger, "reserve", 0, (("a", 3), ("b", 2), ("c", 2), ("candidate", 0)),
+    )
+    assert membership.backing_limit == 7
+    with pytest.raises(ProtocolError):
+        StakeMembership.from_locked_reserve(ledger, "reserve", 0, (("a", 8),))
+    with pytest.raises(ProtocolError, match="locked genesis reserve"):
+        StakeMembership.from_locked_reserve(ledger, "faucet", 0, (("a", 7),))

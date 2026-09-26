@@ -6,8 +6,12 @@ This module does not change the current three-node reference cluster.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .model import ProtocolError, protocol_digest
+
+if TYPE_CHECKING:
+    from .model import Ledger
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,19 @@ class StakeMembership:
     epoch: int
     allocations: tuple[tuple[str, int], ...]
     backing_limit: int
+
+    @classmethod
+    def from_locked_reserve(
+        cls, ledger: Ledger, reserve_account: str, epoch: int,
+        allocations: tuple[tuple[str, int], ...],
+    ) -> StakeMembership:
+        """Bound a proposed allocation to an unchanged genesis-locked balance."""
+        if (
+            ledger.genesis is None or reserve_account not in ledger.genesis.locked_accounts
+            or ledger.balances.get(reserve_account) != ledger.genesis.allocations[reserve_account]
+        ):
+            raise ProtocolError("validator stake requires an intact locked genesis reserve")
+        return cls(epoch, allocations, ledger.balances[reserve_account])
 
     def __post_init__(self) -> None:
         identities = [identity for identity, _ in self.allocations]
