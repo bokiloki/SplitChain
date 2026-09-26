@@ -18,6 +18,7 @@ BACKENDS = (
     "ws://primary:8765", "ws://secondary:8765", "ws://tertiary:8765",
 )
 ROUTES = {"/status": "status", "/leadership": "cluster.leadership"}
+EXPLORER_PAGES = {"/explore/genesis", "/explore/status", "/explore/leadership", "/explore/bootstrap"}
 
 
 def fetch_read_only(method: str) -> dict:
@@ -44,6 +45,28 @@ class Handler(BaseHTTPRequestHandler):
         self.connection.settimeout(5)
 
     def do_GET(self) -> None:
+        if self.path in EXPLORER_PAGES:
+            try:
+                base = os.environ.get("TESTNET_BOOTSTRAP_URL", "https://bokiloki.ddns.net/splitchain/")
+                genesis = GenesisConfig.from_dict(json.loads(Path(os.environ.get(
+                    "TESTNET_GENESIS_FILE", "/etc/splitchain/testnet-genesis.json"
+                )).read_text(encoding="utf-8")))
+                manifest(base, genesis)
+                body = (Path(__file__).parent / "web/explorer.html").read_bytes().replace(
+                    b"__SPLITCHAIN_BASE__", base.encode()
+                )
+            except (OSError, ValueError, ProtocolError):
+                self._send(503, {"error": "testnet explorer unavailable"})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == "/":
             try:
                 body = (Path(__file__).parent / "web/testnet.html").read_bytes()
