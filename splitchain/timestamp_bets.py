@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 
 from .model import ProtocolError, canonical_json, protocol_digest
-from .stake_votes import StakeVoteBook
+from .stake_votes import StakeCertificate, StakeDecision, StakeVote, StakeVoteBook
 
 
 def bet_hash(epoch_digest: str, transaction_digest: str, target_timestamp_ms: int,
@@ -116,6 +116,36 @@ class TimestampBetBook:
         self.commits: dict[tuple[str, int], tuple[BetCommit, int]] = {}
         self.reveals: dict[tuple[str, int], tuple[BetReveal, int]] = {}
         self.suffixes: dict[tuple[str, str], tuple[BetSuffixReveal, int]] = {}
+        self.blocks: list[tuple[tuple[tuple[str, int], ...], StakeCertificate, str]] = []
+        self.accepted: set[tuple[str, int]] = set()
+
+    def block_challenge(self, slots: tuple[tuple[str, int], ...]) -> StakeDecision:
+        if not slots or len(set(slots)) != len(slots):
+            raise ProtocolError("block requires distinct bet commitments")
+        try:
+            bets = [self.commits[slot][0] for slot in slots]
+        except KeyError as exc:
+            raise ProtocolError("block contains an unknown commitment") from exc
+        if any(slot in self.accepted for slot in slots):
+            raise ProtocolError("block reuses an accepted commitment")
+        parent = self.blocks[-1][2] if self.blocks else self.votes.genesis_digest
+        digest = protocol_digest("splitchain/stake-bet-block/v1", {
+            "parent": parent, "height": len(self.blocks) + 1,
+            "epoch_digest": self.votes.epoch_digest,
+            "commits": [asdict(bet) for bet in bets],
+        })
+        return StakeDecision(self.votes.network_id, self.votes.membership.epoch,
+                             self.votes.epoch_digest, "block", len(self.blocks) + 1,
+                             digest, max(bet.value for bet in bets))
+
+    def accept_block(self, slots: tuple[tuple[str, int], ...],
+                     certificate: StakeCertificate) -> None:
+        expected = self.block_challenge(slots)
+        if certificate.decision != expected:
+            raise ProtocolError("stake certificate is for a different next block")
+        certificate.verify(self.votes)
+        self.blocks.append((slots, certificate, expected.digest))
+        self.accepted.update(slots)
 
     def _verify(self, voter: str, payload: bytes, signature: str) -> None:
         key = self.votes.public_keys.get(voter)
@@ -172,7 +202,9 @@ class TimestampBetBook:
         }
         if (len(series) != suffix.end_index
                 or set(series) != set(range(1, suffix.end_index + 1))
-                or any(bet.sequence_length != suffix.end_index for bet in series.values())):
+                or any(bet.sequence_length != suffix.end_index for bet in series.values())
+                or any((bet.voter, bet.position) not in self.accepted
+                       for bet in series.values())):
             raise ProtocolError("timestamp suffix requires the entire accepted series")
         selected = series[suffix.start_index]
         if not selected.target_round <= observed_round <= selected.target_round + 3:
@@ -196,6 +228,8 @@ class TimestampBetBook:
         if not stored:
             raise ProtocolError("timestamp bet has no commitment")
         bet = stored[0]
+        if slot not in self.accepted:
+            raise ProtocolError("timestamp bet has not been accepted by a stake quorum")
         if (type(observed_round) is not int
                 or not bet.target_round <= observed_round <= bet.target_round + 3
                 or bet_hash(bet.epoch_digest, bet.transaction_digest,
@@ -218,6 +252,8 @@ class TimestampBetBook:
                         for reveal, round_number in self.reveals.values()],
             "suffixes": [{"suffix": asdict(suffix), "round": round_number}
                          for suffix, round_number in self.suffixes.values()],
+            "blocks": [{"slots": list(slots), "certificate": asdict(cert), "digest": digest}
+                       for slots, cert, digest in self.blocks],
         }
 
     @classmethod
@@ -226,7 +262,8 @@ class TimestampBetBook:
                 or snapshot.get("epoch_digest") != votes.epoch_digest
                 or not isinstance(snapshot.get("commits"), list)
                 or not isinstance(snapshot.get("reveals"), list)
-                or not isinstance(snapshot.get("suffixes"), list)):
+                or not isinstance(snapshot.get("suffixes"), list)
+                or not isinstance(snapshot.get("blocks"), list)):
             raise ProtocolError("invalid timestamp bet snapshot")
         book = cls(votes)
         try:
@@ -235,6 +272,18 @@ class TimestampBetBook:
                 if (bet.voter, bet.position) in book.commits:
                     raise ProtocolError("duplicate timestamp bet snapshot entry")
                 book.commit(bet, event["round"])
+            for entry in snapshot["blocks"]:
+                raw_cert = entry["certificate"]
+                decision = StakeDecision(**raw_cert["decision"])
+                certificate = StakeCertificate(decision, tuple(
+                    StakeVote(vote["voter"], StakeDecision(**vote["decision"]),
+                              vote["signature"])
+                    for vote in raw_cert["votes"]
+                ))
+                slots = tuple(tuple(slot) for slot in entry["slots"])
+                book.accept_block(slots, certificate)
+                if book.blocks[-1][2] != entry["digest"]:
+                    raise ProtocolError("stake block digest was tampered with")
             for event in snapshot["reveals"]:
                 reveal = BetReveal(**event["reveal"])
                 if (reveal.voter, reveal.position) in book.reveals:

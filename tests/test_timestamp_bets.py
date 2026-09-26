@@ -5,7 +5,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from splitchain.membership import StakeMembership
 from splitchain.model import ProtocolError
-from splitchain.stake_votes import StakeVoteBook
+from splitchain.stake_votes import StakeVoteBook, sign_vote
 from splitchain.timestamp_bets import (
     TimestampBetBook,
     bet_hash,
@@ -34,6 +34,13 @@ def commit_for(book, key, voter="a", value=3, secret="x" * 32):
     )
 
 
+def accept_pending(book, keys):
+    challenge = book.block_challenge(tuple(book.commits))
+    for voter in ("a", "b"):
+        book.votes.submit(sign_vote(keys[voter], voter, challenge))
+    book.accept_block(tuple(book.commits), book.votes.certificate(challenge))
+
+
 def test_signed_hashes_replay_across_independent_node_sandboxes():
     first, keys = setup_bets()
     second = TimestampBetBook(first.votes)
@@ -42,6 +49,7 @@ def test_signed_hashes_replay_across_independent_node_sandboxes():
         book.commit(signed, observed_round=4)
         assert book.snapshot()["commits"][0]["bet"]["commitment"] == signed.commitment
         assert "x" * 32 not in str(book.snapshot())
+        accept_pending(book, keys)
     assert first.snapshot() == second.snapshot()
     recovered = TimestampBetBook.from_snapshot(first.votes, second.snapshot())
     reveal = sign_reveal(keys["a"], "a", 9, "x" * 32, first.votes.epoch_digest)
@@ -61,6 +69,7 @@ def test_timestamp_bets_reject_forgery_overstake_replay_and_early_reveal():
         book.commit(commit_for(book, keys["observer"], voter="observer"), 4)
     book.commit(signed, 4)
     book.commit(signed, 4)
+    accept_pending(book, keys)
     with pytest.raises(ProtocolError, match="equivocated"):
         book.commit(commit_for(book, keys["a"], secret="y" * 32), 4)
     reveal = sign_reveal(keys["a"], "a", 9, "x" * 32, book.votes.epoch_digest)
@@ -101,6 +110,7 @@ def test_revealing_fourth_bet_proves_every_accepted_hash_through_tenth():
         book.commit(signed, 0)
         secret = next_secret(secret)
     assert all(value not in str(book.snapshot()) for value in private_secrets.values())
+    accept_pending(book, keys)
     proof = sign_suffix(keys["a"], "a", book.votes.epoch_digest,
                         "ten-bets", 4, 10, private_secrets[4])
     with pytest.raises(ProtocolError, match="window"):
@@ -133,9 +143,12 @@ def test_suffix_rejects_missing_or_mismatched_later_hash_atomically():
         book.commit(signed, 0)
         secret = next_secret(secret)
     proof = sign_suffix(keys["a"], "a", book.votes.epoch_digest, "ten-bets", 4, 10, fourth)
-    with pytest.raises(ProtocolError, match="does not match"):
+    with pytest.raises(ProtocolError, match="accepted series"):
         book.reveal_suffix(proof, 3)
     assert book.suffixes == {}
+    accept_pending(book, keys)
+    with pytest.raises(ProtocolError, match="does not match"):
+        book.reveal_suffix(proof, 3)
     missing = book.snapshot()
     missing["commits"].pop()
     missing["suffixes"].append({"suffix": {

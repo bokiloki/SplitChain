@@ -30,7 +30,7 @@ class StakeDecision:
     def __post_init__(self) -> None:
         if (
             not self.network_id or not self.epoch_digest or not self.digest
-            or self.kind not in {"mutation", "leadership", "round"}
+            or self.kind not in {"mutation", "leadership", "round", "bet", "block"}
             or type(self.epoch) is not int or self.epoch < 0
             or type(self.position) is not int or self.position < 0
             or type(self.transaction_value) is not int or self.transaction_value < 1

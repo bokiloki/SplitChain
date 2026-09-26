@@ -72,9 +72,14 @@ def rehearse(genesis_path: str | Path, directory: str | Path) -> dict:
         bets = TimestampBetBook(book)
         for signed in signed_bets:
             bets.commit(signed, observed_round=0)
+        slots = tuple((origin, signed.position) for signed in signed_bets)
+        challenge = bets.block_challenge(slots)
+        for voter in names[:3]:
+            book.submit(sign_vote(private[voter], voter, challenge))
+        bets.accept_block(slots, book.certificate(challenge))
         stores[name].save(Ledger(genesis=genesis), book, 1, bets)
     for name, store in stores.items():
-        _, recovered, position, bets = store.load()
+        _, recovered, position, bets, _ = store.load()
         if position != 1 or not recovered.certificate(quorum_decision):
             raise ProtocolError(f"sandbox node {name} did not recover quorum")
         if any(bets.commits[(origin, signed.position)][0].commitment != signed.commitment
@@ -90,9 +95,9 @@ def rehearse(genesis_path: str | Path, directory: str | Path) -> dict:
         "sandbox-ten-bets", 4, 10, fourth_secret,
     )
     for name, store in stores.items():
-        recovered_ledger, recovered_book, position, bets = store.load()
+        recovered_ledger, recovered_book, position, bets, clock = store.load()
         bets.reveal_suffix(reveal, observed_round=3)
-        store.save(recovered_ledger, recovered_book, position, bets)
+        store.save(recovered_ledger, recovered_book, position, bets, clock)
     return {
         "schema": "splitchain/sandbox-rehearsal/v1",
         "nodes": len(names), "independent_stores": len(stores),
@@ -101,6 +106,7 @@ def rehearse(genesis_path: str | Path, directory: str | Path) -> dict:
         "candidate_weight": sum(dict(allocations)[name] for name in names[3:]),
         "votes_before_quorum": signer_votes[origin][:2],
         "quorum_after_third_vote": signer_votes[origin][2],
+        "certified_bet_blocks": len(stores[origin].load()[3].blocks),
         "all_hashes_match": len({tuple(store.load()[3].commits[(origin, signed.position)][0]
                                        .commitment for signed in signed_bets)
                                  for store in stores.values()}) == 1,

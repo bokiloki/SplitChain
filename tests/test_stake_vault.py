@@ -41,11 +41,12 @@ def test_each_validator_restores_independent_full_consensus_state(tmp_path):
     for store in stores:
         store.save(ledger, book, 1, bets)
     for store in stores:
-        recovered, votes, position, bets = store.load()
+        recovered, votes, position, bets, clock = store.load()
         assert recovered.snapshot() == ledger.snapshot()
         assert position == 1
         votes.certificate(target).verify(votes)
         assert bets.commits[("a", 2)][0].commitment == signed_bet.commitment
+        assert clock.latest == {}
         assert "x" * 32 not in store.path.read_text()
     modified = json.loads(stores[0].path.read_text())
     modified["position"] = 2

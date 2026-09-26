@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 from dataclasses import asdict
@@ -10,8 +11,10 @@ from typing import Any
 
 import websockets
 
+from .clock_heartbeat import RoundHeartbeat
 from .model import ProtocolError, protocol_digest
 from .sandbox_daemon import sandbox_request
+from .stake_votes import StakeCertificate, StakeDecision, StakeVote
 from .timestamp_bets import BetCommit, BetSuffixReveal
 from .transport import PeerRegistry, TLSMaterial
 
@@ -30,27 +33,44 @@ class BetPeerRelay:
         self.seen: set[str] = set()
 
     @staticmethod
-    def _event(message: dict) -> tuple[str, BetCommit | BetSuffixReveal, int]:
-        if not isinstance(message, dict) or type(message.get("round")) is not int:
+    def _event(message: dict) -> tuple[str, BetCommit | BetSuffixReveal
+                                       | StakeCertificate | RoundHeartbeat,
+                                       int | None, tuple[tuple[str, int], ...] | None]:
+        if not isinstance(message, dict):
             raise ProtocolError("invalid peer bet event")
         method = message.get("method")
         if method == "bet.commit":
             event = BetCommit(**message["event"])
         elif method == "bet.reveal_suffix":
             event = BetSuffixReveal(**message["event"])
+        elif method == "bet.block.accept":
+            raw = message["event"]
+            event = StakeCertificate(StakeDecision(**raw["decision"]), tuple(
+                StakeVote(item["voter"], StakeDecision(**item["decision"]),
+                          item["signature"]) for item in raw["votes"]
+            ))
+        elif method == "clock.heartbeat":
+            event = RoundHeartbeat(**message["event"])
+        elif method == "round.advance.vote":
+            raw = message["event"]
+            event = StakeVote(raw["voter"], StakeDecision(**raw["decision"]), raw["signature"])
         else:
             raise ProtocolError("unsupported peer bet event")
-        return method, event, message["round"]
+        round_number = message.get("round")
+        if method in {"bet.commit", "bet.reveal_suffix"} and type(round_number) is not int:
+            raise ProtocolError("bet event requires a consensus round")
+        slots = (tuple(tuple(slot) for slot in message["slots"])
+                 if method == "bet.block.accept" else None)
+        return method, event, round_number, slots
 
     async def _store_and_forward(self, message: dict, sender: str | None) -> dict:
-        method, event, round_number = self._event(message)
-        result = await sandbox_request(self.socket_path, method, event, round_number)
+        method, event, round_number, slots = self._event(message)
+        result = await sandbox_request(self.socket_path, method, event, round_number, slots)
         digest = protocol_digest("splitchain/peer-bet-event/v1", message)
         if digest not in self.seen:
             self.seen.add(digest)
             await asyncio.gather(*(
-                self._send(peer, {"method": method, "event": asdict(event),
-                                  "round": round_number}, digest)
+                self._send(peer, message, digest)
                 for peer in self.peers if peer != sender
             ))
         return result
@@ -82,11 +102,27 @@ class BetPeerRelay:
             for (peer, digest), message in list(self.pending.items())
         ))
 
-    async def publish(self, event: BetCommit | BetSuffixReveal, round_number: int) -> dict:
-        method = "bet.commit" if isinstance(event, BetCommit) else "bet.reveal_suffix"
-        return await self._store_and_forward({
-            "method": method, "event": asdict(event), "round": round_number,
-        }, sender=None)
+    async def publish(self, event: BetCommit | BetSuffixReveal | StakeCertificate
+                      | RoundHeartbeat, round_number: int | None = None,
+                      slots: tuple[tuple[str, int], ...] | None = None) -> dict:
+        if isinstance(event, BetCommit):
+            method = "bet.commit"
+        elif isinstance(event, BetSuffixReveal):
+            method = "bet.reveal_suffix"
+        elif isinstance(event, StakeCertificate):
+            method = "bet.block.accept"
+        elif isinstance(event, RoundHeartbeat):
+            method = "clock.heartbeat"
+        elif isinstance(event, StakeVote):
+            method = "round.advance.vote"
+        else:
+            raise ProtocolError("unsupported peer event")
+        message: dict = {"method": method, "event": asdict(event)}
+        if round_number is not None:
+            message["round"] = round_number
+        if slots is not None:
+            message["slots"] = slots
+        return await self._store_and_forward(message, sender=None)
 
     async def handler(self, socket: Any) -> None:
         tls_object = socket.transport.get_extra_info("ssl_object")
@@ -102,3 +138,53 @@ class BetPeerRelay:
             except (ProtocolError, KeyError, TypeError, ValueError) as exc:
                 response = {"error": str(exc)}
             await socket.send(json.dumps(response, sort_keys=True))
+
+
+async def run_relay(relay: BetPeerRelay, host: str, port: int,
+                    heartbeat_seconds: float = 2.0) -> None:
+    async def pulse() -> None:
+        while True:
+            try:
+                raw = await sandbox_request(relay.socket_path, "clock.create")
+                await relay.publish(RoundHeartbeat(**raw))
+                await relay.retry_pending()
+            except (OSError, ProtocolError, TimeoutError):
+                # A local sandbox or peer failure must not invent a round.
+                pass
+            await asyncio.sleep(heartbeat_seconds)
+
+    if heartbeat_seconds <= 0:
+        raise ProtocolError("heartbeat interval must be positive")
+    async with websockets.serve(
+        relay.handler, host, port, ssl=relay.tls.server_context(),
+        max_size=16 * 1024,
+    ):
+        await pulse()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Relay signed events to isolated node sandboxes")
+    parser.add_argument("--node-id", required=True)
+    parser.add_argument("--socket", required=True)
+    parser.add_argument("--peer", action="append", default=[], help="NODE_ID=wss://HOST:PORT")
+    parser.add_argument("--registry", required=True)
+    parser.add_argument("--tls-cert", required=True)
+    parser.add_argument("--tls-key", required=True)
+    parser.add_argument("--tls-ca", required=True)
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=8765)
+    args = parser.parse_args()
+    peers: dict[str, str] = {}
+    for item in args.peer:
+        name, sep, url = item.partition("=")
+        if not sep or name in peers:
+            raise ProtocolError("duplicate or invalid relay peer")
+        peers[name] = url
+    tls = TLSMaterial.from_values(args.tls_cert, args.tls_key, args.tls_ca)
+    relay = BetPeerRelay(args.node_id, args.socket, peers,
+                         PeerRegistry.from_path(args.registry), tls)
+    asyncio.run(run_relay(relay, args.host, args.port))
+
+
+if __name__ == "__main__":
+    main()
