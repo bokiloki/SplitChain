@@ -121,6 +121,15 @@ class BetPeerRelay:
                         raise ProtocolError("peer rejected signed bet event")
             self.pending.pop((peer, digest), None)
             self._save_pending()
+        except ProtocolError as exc:
+            # A newer signed event already reached the peer.  The older
+            # checkpoint entry is therefore satisfied and must not retry forever.
+            if "replayed or regressed" in str(exc):
+                self.pending.pop((peer, digest), None)
+                self._save_pending()
+            else:
+                self.pending[(peer, digest)] = message
+                self._save_pending()
         except (OSError, TimeoutError, ValueError, websockets.WebSocketException):
             self.pending[(peer, digest)] = message
             self._save_pending()

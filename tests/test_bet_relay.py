@@ -1,5 +1,6 @@
 import asyncio
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -59,3 +60,25 @@ def test_peer_relay_restores_durable_retry_checkpoint(tmp_path):
                             {"secondary": "wss://secondary:8765"}, object(), object(), pending)
     assert restored.pending == relay.pending
     assert pending.stat().st_mode & 0o077 == 0
+
+
+def test_peer_relay_drops_retry_when_peer_already_has_newer_event(monkeypatch, tmp_path):
+    async def scenario():
+        pending = tmp_path / "relay-pending.json"
+        relay = BetPeerRelay("primary", tmp_path / "sandbox.sock",
+                             {"secondary": "wss://secondary:8765"}, object(), object(), pending)
+        message = {"method": "clock.heartbeat", "event": {"voter": "primary"}}
+        relay.pending[("secondary", "digest")] = message
+        class AlreadyDelivered:
+            async def __aenter__(self):
+                raise ProtocolError("replayed or regressed round heartbeat")
+            async def __aexit__(self, *args):
+                return False
+        relay.tls = SimpleNamespace(client_context=lambda: None)
+        monkeypatch.setattr("splitchain.bet_relay.websockets.connect",
+                            lambda *args, **kwargs: AlreadyDelivered())
+        await relay._send("secondary", message, "digest")
+        assert relay.pending == {}
+        assert json.loads(pending.read_text()) == []
+
+    asyncio.run(scenario())
