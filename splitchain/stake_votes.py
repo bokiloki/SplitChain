@@ -7,20 +7,21 @@ import binascii
 from dataclasses import asdict, dataclass
 
 from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
 
 from .membership import JointStakeMembership, StakeMembership
-from .model import ProtocolError, canonical_json
+from .model import ProtocolError, canonical_json, protocol_digest
 
 
 @dataclass(frozen=True)
 class StakeDecision:
     network_id: str
     epoch: int
-    membership_digest: str
+    epoch_digest: str
     kind: str
     position: int
     digest: str
@@ -28,7 +29,7 @@ class StakeDecision:
 
     def __post_init__(self) -> None:
         if (
-            not self.network_id or not self.membership_digest or not self.digest
+            not self.network_id or not self.epoch_digest or not self.digest
             or self.kind not in {"mutation", "leadership", "round"}
             or type(self.epoch) is not int or self.epoch < 0
             or type(self.position) is not int or self.position < 0
@@ -56,18 +57,55 @@ def sign_vote(key: Ed25519PrivateKey, voter: str, decision: StakeDecision) -> St
     return StakeVote(voter, decision, base64.b64encode(key.sign(unsigned.payload())).decode())
 
 
+@dataclass(frozen=True)
+class StakeCertificate:
+    decision: StakeDecision
+    votes: tuple[StakeVote, ...]
+
+    def verify(self, book: StakeVoteBook) -> None:
+        """Rebuild quorum solely from pinned keys and independently signed votes."""
+        if not self.votes or len({vote.voter for vote in self.votes}) != len(self.votes):
+            raise ProtocolError("stake certificate has duplicate or missing voters")
+        verifier = StakeVoteBook(
+            book.membership, book.network_id, book.genesis_digest, book.public_keys,
+        )
+        for vote in self.votes:
+            if vote.decision != self.decision:
+                raise ProtocolError("stake certificate mixes decisions")
+            verifier.submit(vote)
+        if not verifier.membership.approves(
+            {vote.voter for vote in self.votes}, self.decision.transaction_value,
+        ):
+            raise ProtocolError("stake certificate lacks eligible stake quorum")
+
+
 class StakeVoteBook:
     """Verify independent identities and prevent duplicate and conflicting decisions."""
 
     def __init__(
-        self, membership: StakeMembership, network_id: str,
+        self, membership: StakeMembership, network_id: str, genesis_digest: str,
         public_keys: dict[str, Ed25519PublicKey],
     ) -> None:
-        if set(public_keys) != {identity for identity, _ in membership.allocations}:
+        raw_keys = [key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+                    for key in public_keys.values() if isinstance(key, Ed25519PublicKey)]
+        if (not network_id or not genesis_digest
+                or set(public_keys) != {identity for identity, _ in membership.allocations}
+                or len(raw_keys) != len(public_keys) or len(set(raw_keys)) != len(raw_keys)):
             raise ProtocolError("stake key registry does not match membership")
         self.membership = membership
         self.network_id = network_id
+        self.genesis_digest = genesis_digest
         self.public_keys = public_keys.copy()
+        self.epoch_digest = protocol_digest("splitchain/stake-epoch/v1", {
+            "network_id": network_id,
+            "genesis_digest": genesis_digest,
+            "membership_digest": membership.digest(),
+            "public_keys": {
+                identity: base64.b64encode(key.public_bytes(
+                    serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+                )).decode("ascii") for identity, key in sorted(public_keys.items())
+            },
+        })
         self._decisions: dict[tuple[str, str, int], StakeDecision] = {}
         self._votes: dict[StakeDecision, dict[str, StakeVote]] = {}
 
@@ -76,7 +114,7 @@ class StakeVoteBook:
         if (
             decision.network_id != self.network_id
             or decision.epoch != self.membership.epoch
-            or decision.membership_digest != self.membership.digest()
+            or decision.epoch_digest != self.epoch_digest
         ):
             raise ProtocolError("stake vote is for another network or epoch")
         allocation = dict(self.membership.allocations).get(vote.voter, 0)
@@ -102,23 +140,31 @@ class StakeVoteBook:
         return {
             "schema": "splitchain/stake-votes/v1",
             "network_id": self.network_id,
-            "membership_digest": self.membership.digest(),
+            "epoch_digest": self.epoch_digest,
             "votes": [asdict(vote) for votes in self._votes.values() for vote in votes.values()],
         }
 
+    def certificate(self, decision: StakeDecision) -> StakeCertificate:
+        votes = self._votes.get(decision, {})
+        if not self.membership.approves(set(votes), decision.transaction_value):
+            raise ProtocolError("stake quorum has not been reached")
+        certificate = StakeCertificate(decision, tuple(votes[voter] for voter in sorted(votes)))
+        certificate.verify(self)
+        return certificate
+
     @classmethod
     def from_snapshot(
-        cls, membership: StakeMembership, network_id: str,
+        cls, membership: StakeMembership, network_id: str, genesis_digest: str,
         public_keys: dict[str, Ed25519PublicKey], snapshot: dict,
     ) -> StakeVoteBook:
+        book = cls(membership, network_id, genesis_digest, public_keys)
         if (
             not isinstance(snapshot, dict) or snapshot.get("schema") != "splitchain/stake-votes/v1"
             or snapshot.get("network_id") != network_id
-            or snapshot.get("membership_digest") != membership.digest()
+            or snapshot.get("epoch_digest") != book.epoch_digest
             or not isinstance(snapshot.get("votes"), list)
         ):
             raise ProtocolError("stake vote snapshot does not match this epoch")
-        book = cls(membership, network_id, public_keys)
         try:
             for raw in snapshot["votes"]:
                 decision = StakeDecision(**raw["decision"])
@@ -146,7 +192,7 @@ class JointStakeVoteBooks:
     def approves(self, kind: str, position: int, digest: str, value: int) -> bool:
         def approved(book: StakeVoteBook) -> bool:
             decision = StakeDecision(
-                book.network_id, book.membership.epoch, book.membership.digest(),
+                book.network_id, book.membership.epoch, book.epoch_digest,
                 kind, position, digest, value,
             )
             return book.membership.approves(

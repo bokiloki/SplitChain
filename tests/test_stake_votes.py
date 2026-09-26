@@ -7,6 +7,7 @@ from splitchain.membership import JointStakeMembership, StakeMembership
 from splitchain.model import ProtocolError
 from splitchain.stake_votes import (
     JointStakeVoteBooks,
+    StakeCertificate,
     StakeDecision,
     StakeVoteBook,
     sign_vote,
@@ -15,7 +16,7 @@ from splitchain.stake_votes import (
 
 def setup_book(stakes):
     keys = {identity: Ed25519PrivateKey.generate() for identity, _ in stakes.allocations}
-    book = StakeVoteBook(stakes, "test-network", {
+    book = StakeVoteBook(stakes, "test-network", "genesis-test", {
         identity: key.public_key() for identity, key in keys.items()
     })
     return book, keys
@@ -23,7 +24,7 @@ def setup_book(stakes):
 
 def decision(book, value=2, digest="transfer-a", kind="mutation", position=7):
     return StakeDecision("test-network", book.membership.epoch,
-                         book.membership.digest(), kind, position, digest, value)
+                         book.epoch_digest, kind, position, digest, value)
 
 
 def test_signed_stake_votes_require_distinct_eligible_backed_weight():
@@ -36,8 +37,9 @@ def test_signed_stake_votes_require_distinct_eligible_backed_weight():
     with pytest.raises(ProtocolError, match="does not cover"):
         book.submit(sign_vote(keys["candidate"], "candidate", target))
     assert book.submit(sign_vote(keys["c"], "c", target)) is True
+    book.certificate(target).verify(book)
     assert StakeVoteBook.from_snapshot(
-        membership, "test-network", book.public_keys, book.snapshot()
+        membership, "test-network", "genesis-test", book.public_keys, book.snapshot()
     ).snapshot() == book.snapshot()
 
 
@@ -55,10 +57,31 @@ def test_forgery_equivocation_wrong_epoch_and_transaction_size_fail_closed():
     with pytest.raises(ProtocolError, match="conflicting decisions"):
         book.submit(sign_vote(keys["a"], "a", replace(target, digest="transfer-b")))
     assert book.submit(sign_vote(keys["b"], "b", target)) is True
+    with pytest.raises(ProtocolError, match="duplicate"):
+        StakeCertificate(target, (
+            sign_vote(keys["a"], "a", target), sign_vote(keys["a"], "a", target),
+        )).verify(book)
     tampered = book.snapshot()
     tampered["votes"][0]["decision"]["digest"] = "transfer-b"
     with pytest.raises(ProtocolError, match="snapshot"):
-        StakeVoteBook.from_snapshot(membership, "test-network", book.public_keys, tampered)
+        StakeVoteBook.from_snapshot(
+            membership, "test-network", "genesis-test", book.public_keys, tampered
+        )
+
+
+def test_stake_epoch_binds_validator_keys_and_genesis():
+    membership = StakeMembership(0, (("a", 5), ("b", 5), ("c", 5)), 15)
+    book, keys = setup_book(membership)
+    signed = sign_vote(keys["a"], "a", decision(book))
+    other_keys = dict(book.public_keys)
+    other_keys["a"] = Ed25519PrivateKey.generate().public_key()
+    changed_key = StakeVoteBook(membership, "test-network", "genesis-test", other_keys)
+    changed_genesis = StakeVoteBook(membership, "test-network", "other-genesis", book.public_keys)
+    assert changed_key.epoch_digest != book.epoch_digest
+    assert changed_genesis.epoch_digest != book.epoch_digest
+    for verifier in (changed_key, changed_genesis):
+        with pytest.raises(ProtocolError, match="another network or epoch"):
+            verifier.submit(signed)
 
 
 def test_joint_quorum_needs_independently_signed_decisions_in_both_epochs():
