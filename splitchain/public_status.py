@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -18,7 +19,7 @@ BACKENDS = (
     "ws://primary:8765", "ws://secondary:8765", "ws://tertiary:8765",
 )
 ROUTES = {"/status": "status", "/leadership": "cluster.leadership"}
-EXPLORER_PAGES = {"/explore/genesis", "/explore/status", "/explore/leadership", "/explore/bootstrap"}
+EXPLORER_PAGES = {"/explore/genesis", "/explore/status", "/explore/leadership", "/explore/bootstrap", "/explore/nodes"}
 
 
 def fetch_read_only(method: str) -> dict:
@@ -37,6 +38,36 @@ def fetch_read_only(method: str) -> dict:
         except (OSError, TimeoutError, ValueError, WebSocketException):
             continue
     raise ConnectionError("no node returned a valid status")
+
+
+def fetch_node_status(backend: str) -> dict:
+    """Probe one configured node, returning a public summary of its ledger head."""
+
+    name = backend.removeprefix("ws://").split(":")[0]
+    try:
+        with connect(backend, open_timeout=1.5, close_timeout=1, max_size=64 * 1024) as socket:
+            socket.send(json.dumps({"id": "node-status", "method": "status", "params": {}}))
+            response = json.loads(socket.recv(timeout=1.5))
+            result = response["result"]
+            head = result["canonical_head"]
+            if not isinstance(head["height"], int) or not isinstance(head["digest"], str):
+                raise TypeError("invalid ledger head")
+            return {"name": name, "state": "online", "height": head["height"],
+                    "digest": head["digest"], "round": result["round"]}
+    except (OSError, TimeoutError, ValueError, KeyError, TypeError, WebSocketException):
+        return {"name": name, "state": "unavailable", "height": None,
+                "digest": None, "round": None}
+
+
+def fetch_nodes() -> dict:
+    """Probe each configured node independently without exposing internal addresses."""
+
+    with ThreadPoolExecutor(max_workers=len(BACKENDS)) as pool:
+        nodes = list(pool.map(fetch_node_status, BACKENDS))
+    online = sum(node["state"] == "online" for node in nodes)
+    heads = {(node["height"], node["digest"]) for node in nodes if node["state"] == "online"}
+    return {"nodes": nodes, "online": online, "total": len(nodes),
+            "heads_agree": online == len(nodes) and len(heads) == 1}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -98,6 +129,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(503, {"error": "genesis unavailable"})
                 return
             self._send(200, result)
+            return
+        if self.path == "/nodes":
+            self._send(200, fetch_nodes())
             return
         if self.path != urlsplit(self.path).path or self.path not in ROUTES:
             self._send(404, {"error": "unknown read-only endpoint"})
