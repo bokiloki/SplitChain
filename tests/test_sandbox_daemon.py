@@ -124,3 +124,28 @@ def test_sandbox_dispatch_verifies_commit_and_omits_history_queries(tmp_path):
     assert SandboxDaemon(tmp_path / "sandbox.sock", store).ledger.round == 3
     assert SandboxDaemon(tmp_path / "sandbox.sock", store).clock.latest["a"][0].sequence == 2
     assert secret in store.path.read_text()
+
+
+def test_sandbox_rejoin_queue_is_separate_from_live_dispatch(tmp_path):
+    genesis = GenesisConfig.from_dict({
+        "schema": "splitchain-genesis/v1", "network_id": "sandbox-rejoin",
+        "max_supply": 21, "allocations": {"faucet": 14, "reserve": 7},
+        "locked_accounts": ["reserve"],
+    })
+    membership = StakeMembership(0, (("a", 7),), 7)
+    key = Ed25519PrivateKey.generate()
+    store = SandboxConsensusStore(tmp_path / "state" / "consensus.json",
+                                  genesis=genesis, membership=membership,
+                                  keys={"a": key.public_key()})
+    daemon = SandboxDaemon(tmp_path / "sandbox.sock", store, "a", key)
+
+    async def scenario():
+        started = await daemon.dispatch({"method": "rejoin.begin"})
+        assert started["checkpoint"]["round"] == 0
+        assert (await daemon.dispatch({"method": "rejoin.enqueue",
+                                       "message": {"method": "clock.heartbeat", "round": 1}}))["queued"] == 1
+        status = await daemon.dispatch({"method": "rejoin.status"})
+        assert status["active"] and status["queued"] == 1
+        assert daemon.ledger.round == 0
+
+    asyncio.run(scenario())

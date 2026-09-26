@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from .clock_heartbeat import ClockTracker, RoundHeartbeat, sign_heartbeat
 from .model import GenesisConfig, Ledger, ProtocolError, protocol_digest
+from .rejoin import RejoinCheckpoint, RejoinQueue
 from .stake_manifest import load_manifest
 from .stake_vault import SandboxConsensusStore
 from .stake_votes import StakeCertificate, StakeDecision, StakeVote, StakeVoteBook, sign_vote
@@ -49,6 +50,16 @@ class SandboxDaemon:
                 raise ProtocolError("local heartbeat key differs from pinned epoch")
         self.node_id = node_id
         self.private_key = private_key
+        self.rejoin: RejoinQueue | None = None
+
+    def _checkpoint(self) -> RejoinCheckpoint:
+        state_digest = (protocol_digest("splitchain/sandbox-live-checkpoint/v1", {
+            "ledger": self.ledger.snapshot(), "position": self.position,
+        }))
+        return RejoinCheckpoint(self.votes.epoch_digest, self.position,
+                                self.ledger.round,
+                                protocol_digest("splitchain/sandbox-ledger/v1",
+                                                self.ledger.snapshot()), state_digest)
 
     def round_challenge(self) -> StakeDecision:
         return StakeDecision(
@@ -155,6 +166,20 @@ class SandboxDaemon:
                 return {"epoch_digest": self.votes.epoch_digest,
                         "position": self.position, "round": self.ledger.round,
                         "commit_count": len(self.bets.commits)}
+            if method == "rejoin.begin":
+                self.rejoin = RejoinQueue(self.store.path.with_name("rejoin.json"),
+                                          self._checkpoint())
+                return {"checkpoint": asdict(self.rejoin.checkpoint), "queued": 0}
+            if method == "rejoin.enqueue":
+                if self.rejoin is None:
+                    raise ProtocolError("rejoin mode is not active")
+                event = self.rejoin.append(request.get("message", request.get("event")))
+                return {"queued": len(self.rejoin.events), "digest": event.digest}
+            if method == "rejoin.status":
+                return {"active": self.rejoin is not None,
+                        "queued": len(self.rejoin.events) if self.rejoin else 0,
+                        "checkpoint": (asdict(self.rejoin.checkpoint)
+                                       if self.rejoin else None)}
             if method == "clock.status":
                 now = time.time_ns() // 1_000_000
                 head = protocol_digest("splitchain/sandbox-ledger/v1", self.ledger.snapshot())
@@ -200,14 +225,14 @@ class SandboxDaemon:
 
 async def sandbox_request(socket_path: str | Path, method: str,
                           event: BetCommit | BetSuffixReveal | StakeVote | StakeCertificate
-                          | RoundHeartbeat | None = None,
+                          | RoundHeartbeat | dict | None = None,
                           round_number: int | None = None,
                           slots: tuple[tuple[str, int], ...] | None = None) -> dict:
     reader, writer = await asyncio.open_unix_connection(str(socket_path), limit=MAX_REQUEST + 1)
     try:
         request = {"method": method}
         if event is not None:
-            request["event"] = asdict(event)
+            request["event"] = event if isinstance(event, dict) else asdict(event)
         if round_number is not None:
             request["round"] = round_number
         if slots is not None:
