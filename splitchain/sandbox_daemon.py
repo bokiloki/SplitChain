@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from .clock_heartbeat import ClockTracker, RoundHeartbeat, sign_heartbeat
 from .model import GenesisConfig, Ledger, ProtocolError, protocol_digest
-from .rejoin import RejoinCheckpoint, RejoinQueue
+from .rejoin import RejoinCheckpoint, RejoinHistory, RejoinQueue
 from .stake_manifest import load_manifest
 from .stake_vault import SandboxConsensusStore
 from .stake_votes import StakeCertificate, StakeDecision, StakeVote, StakeVoteBook, sign_vote
@@ -51,6 +51,11 @@ class SandboxDaemon:
         self.node_id = node_id
         self.private_key = private_key
         self.rejoin: RejoinQueue | None = None
+        rejoin_path = store.path.with_name("rejoin.json")
+        if rejoin_path.exists():
+            self.rejoin = RejoinQueue(rejoin_path, self._checkpoint())
+        self.history = RejoinHistory(store.path.with_name("rejoin-history.json"),
+                                     store.genesis.digest(), self.votes.epoch_digest)
 
     def _checkpoint(self) -> RejoinCheckpoint:
         state_digest = (protocol_digest("splitchain/sandbox-live-checkpoint/v1", {
@@ -76,6 +81,11 @@ class SandboxDaemon:
             raise ProtocolError("sandbox request must be an object")
         method = request.get("method")
         async with self.lock:
+            if self.rejoin is not None and method in {
+                "round.advance.vote", "bet.commit", "bet.block.accept", "bet.reveal_suffix",
+            }:
+                queued = self.rejoin.append(request)
+                return {"queued": True, "digest": queued.digest}
             if method == "round.advance.vote":
                 event = request["event"]
                 vote = StakeVote(event["voter"], StakeDecision(**event["decision"]),
@@ -101,6 +111,7 @@ class SandboxDaemon:
                 self.ledger = new_ledger
                 self.bets.votes = trial
                 self.position += int(reached)
+                self.history.append({"method": method, "event": request["event"]})
                 return {"quorum": reached, "round": self.ledger.round}
             if method == "round.sign":
                 if self.node_id is None or self.private_key is None:
@@ -118,6 +129,8 @@ class SandboxDaemon:
                 trial.accept_block(slots, cert)
                 self.store.save(self.ledger, self.votes, self.position, trial, self.clock)
                 self.bets = trial
+                self.history.append({"method": method, "event": request["event"],
+                                     "slots": request["slots"]})
                 return {"accepted": True, "block_height": len(trial.blocks)}
             if method == "clock.heartbeat":
                 event = RoundHeartbeat(**request["event"])
@@ -153,6 +166,8 @@ class SandboxDaemon:
                 trial.commit(bet, request["round"])
                 self.store.save(self.ledger, self.votes, self.position, trial, self.clock)
                 self.bets = trial
+                self.history.append({"method": method, "event": request["event"],
+                                     "round": request["round"]})
                 return {"stored": True, "commitment": bet.commitment}
             if method == "bet.reveal_suffix":
                 suffix = BetSuffixReveal(**request["event"])
@@ -160,6 +175,8 @@ class SandboxDaemon:
                 trial.reveal_suffix(suffix, request["round"])
                 self.store.save(self.ledger, self.votes, self.position, trial, self.clock)
                 self.bets = trial
+                self.history.append({"method": method, "event": request["event"],
+                                     "round": request["round"]})
                 return {"verified": True, "start": suffix.start_index,
                         "end": suffix.end_index}
             if method == "health":
@@ -169,7 +186,8 @@ class SandboxDaemon:
             if method == "rejoin.begin":
                 self.rejoin = RejoinQueue(self.store.path.with_name("rejoin.json"),
                                           self._checkpoint())
-                return {"checkpoint": asdict(self.rejoin.checkpoint), "queued": 0}
+                return {"checkpoint": asdict(self.rejoin.checkpoint),
+                        "queued": len(self.rejoin.events)}
             if method == "rejoin.enqueue":
                 if self.rejoin is None:
                     raise ProtocolError("rejoin mode is not active")
@@ -180,6 +198,16 @@ class SandboxDaemon:
                         "queued": len(self.rejoin.events) if self.rejoin else 0,
                         "checkpoint": (asdict(self.rejoin.checkpoint)
                                        if self.rejoin else None)}
+            if method == "rejoin.history":
+                sequence = request.get("since")
+                limit = request.get("limit", 10)
+                if type(limit) is not int or not 1 <= limit <= 2:
+                    raise ProtocolError("invalid rejoin history limit")
+                events = self.history.export_since(sequence)[:limit]
+                return {"epoch_digest": self.votes.epoch_digest,
+                        "genesis_digest": self.store.genesis.digest(),
+                        "total": len(self.history.events),
+                        "events": [asdict(event) for event in events]}
             if method == "clock.status":
                 now = time.time_ns() // 1_000_000
                 head = protocol_digest("splitchain/sandbox-ledger/v1", self.ledger.snapshot())
@@ -227,10 +255,13 @@ async def sandbox_request(socket_path: str | Path, method: str,
                           event: BetCommit | BetSuffixReveal | StakeVote | StakeCertificate
                           | RoundHeartbeat | dict | None = None,
                           round_number: int | None = None,
-                          slots: tuple[tuple[str, int], ...] | None = None) -> dict:
+                          slots: tuple[tuple[str, int], ...] | None = None,
+                          extra: dict | None = None) -> dict:
     reader, writer = await asyncio.open_unix_connection(str(socket_path), limit=MAX_REQUEST + 1)
     try:
         request = {"method": method}
+        if extra:
+            request.update(extra)
         if event is not None:
             request["event"] = event if isinstance(event, dict) else asdict(event)
         if round_number is not None:

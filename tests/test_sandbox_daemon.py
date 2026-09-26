@@ -121,6 +121,8 @@ def test_sandbox_dispatch_verifies_commit_and_omits_history_queries(tmp_path):
 
     asyncio.run(scenario())
     assert daemon.bets.commits[("a", 1)][0].commitment == bet.commitment
+    assert len(daemon.history.events) == 6
+    assert len(SandboxDaemon(tmp_path / "sandbox.sock", store).history.events) == 6
     assert SandboxDaemon(tmp_path / "sandbox.sock", store).ledger.round == 3
     assert SandboxDaemon(tmp_path / "sandbox.sock", store).clock.latest["a"][0].sequence == 2
     assert secret in store.path.read_text()
@@ -146,6 +148,11 @@ def test_sandbox_rejoin_queue_is_separate_from_live_dispatch(tmp_path):
                                        "message": {"method": "clock.heartbeat", "round": 1}}))["queued"] == 1
         status = await daemon.dispatch({"method": "rejoin.status"})
         assert status["active"] and status["queued"] == 1
+        vote = await daemon.dispatch({"method": "round.sign"})
+        assert (await daemon.dispatch({"method": "round.advance.vote", "event": vote}))["queued"]
         assert daemon.ledger.round == 0
+        restored = SandboxDaemon(tmp_path / "sandbox.sock", store, "a", key)
+        assert (await restored.dispatch({"method": "rejoin.status"}))["queued"] == 2
+        assert restored.ledger.round == 0
 
     asyncio.run(scenario())

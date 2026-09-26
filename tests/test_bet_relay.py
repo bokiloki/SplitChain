@@ -51,7 +51,7 @@ def test_peer_relay_forwards_only_sandbox_verified_signed_commitments(monkeypatc
 
 def test_peer_relay_restores_durable_retry_checkpoint(tmp_path):
     pending = tmp_path / "state" / "relay-pending.json"
-    message = {"method": "clock.heartbeat", "event": {"voter": "a"}}
+    message = {"method": "bet.commit", "event": {"voter": "a"}}
     relay = BetPeerRelay("primary", tmp_path / "sandbox.sock",
                          {"secondary": "wss://secondary:8765"}, object(), object(), pending)
     relay.pending[("secondary", "digest")] = message
@@ -82,3 +82,13 @@ def test_peer_relay_drops_retry_when_peer_already_has_newer_event(monkeypatch, t
         assert json.loads(pending.read_text()) == []
 
     asyncio.run(scenario())
+
+
+def test_missed_heartbeat_never_fills_durable_consensus_retry_queue(tmp_path):
+    pending = tmp_path / "relay-pending.json"
+    relay = BetPeerRelay("primary", tmp_path / "sandbox.sock",
+                         {"secondary": "wss://secondary:8765"}, object(), object(), pending)
+    relay._queue_retry("secondary", "old", {"method": "clock.heartbeat", "event": {}})
+    assert json.loads(pending.read_text()) == []
+    relay._queue_retry("secondary", "vote", {"method": "round.advance.vote", "event": {}})
+    assert len(json.loads(pending.read_text())) == 1

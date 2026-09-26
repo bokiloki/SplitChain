@@ -13,6 +13,7 @@ import websockets
 
 from .clock_heartbeat import RoundHeartbeat
 from .model import ProtocolError, protocol_digest
+from .rejoin import RejoinEnvelope
 from .sandbox_daemon import sandbox_request
 from .stake_votes import StakeCertificate, StakeDecision, StakeVote
 from .timestamp_bets import BetCommit, BetSuffixReveal
@@ -43,7 +44,9 @@ class BetPeerRelay:
                     if (not isinstance(peer, str) or not isinstance(digest, str)
                             or not isinstance(message, dict)):
                         raise TypeError
-                    self.pending[(peer, digest)] = message
+                    if message.get("method") != "clock.heartbeat":
+                        self.pending[(peer, digest)] = message
+                self._save_pending()
             except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
                 raise ProtocolError("invalid relay retry checkpoint") from exc
 
@@ -58,6 +61,16 @@ class BetPeerRelay:
         ], sort_keys=True, separators=(",", ":")))
         temporary.chmod(0o600)
         temporary.replace(self.pending_path)
+
+    def _queue_retry(self, peer: str, digest: str, message: dict) -> None:
+        # Heartbeats describe current presence. Retaining every missed pulse
+        # creates an unbounded backlog and delays actual consensus events.
+        if message.get("method") == "clock.heartbeat":
+            self.pending.pop((peer, digest), None)
+            self._save_pending()
+            return
+        self.pending[(peer, digest)] = message
+        self._save_pending()
 
     @staticmethod
     def _event(message: dict) -> tuple[str, BetCommit | BetSuffixReveal
@@ -117,28 +130,55 @@ class BetPeerRelay:
                         raise ProtocolError("peer certificate differs from configured node")
                     await socket.send(json.dumps(message, sort_keys=True))
                     reply = json.loads(await socket.recv())
-                    if reply.get("error") or reply.get("result") is None:
+                    if reply.get("error"):
+                        raise ProtocolError(str(reply["error"]))
+                    if reply.get("result") is None:
                         raise ProtocolError("peer rejected signed bet event")
             self.pending.pop((peer, digest), None)
             self._save_pending()
         except ProtocolError as exc:
             # A newer signed event already reached the peer.  The older
             # checkpoint entry is therefore satisfied and must not retry forever.
-            if "replayed or regressed" in str(exc):
+            if message.get("method") == "clock.heartbeat" and "replayed or regressed" in str(exc):
                 self.pending.pop((peer, digest), None)
                 self._save_pending()
             else:
-                self.pending[(peer, digest)] = message
-                self._save_pending()
+                self._queue_retry(peer, digest, message)
         except (OSError, TimeoutError, ValueError, websockets.WebSocketException):
-            self.pending[(peer, digest)] = message
-            self._save_pending()
+            self._queue_retry(peer, digest, message)
 
     async def retry_pending(self) -> None:
         await asyncio.gather(*(
             self._send(peer, message, digest)
             for (peer, digest), message in list(self.pending.items())
         ))
+
+    async def fetch_history(self, peer: str, since: int, parent_digest: str,
+                            epoch_digest: str) -> list[RejoinEnvelope]:
+        """Fetch and verify a bounded history range from an authenticated peer."""
+        if peer not in self.peers or type(since) is not int or since < 0:
+            raise ProtocolError("invalid rejoin peer or position")
+        async with websockets.connect(self.peers[peer], ssl=self.tls.client_context(),
+                                      max_size=16 * 1024, open_timeout=3) as socket:
+            tls_object = socket.transport.get_extra_info("ssl_object")
+            identity = self.registry.verify_der(
+                tls_object.getpeercert(binary_form=True) if tls_object else None,
+            )
+            if identity.node_id != peer:
+                raise ProtocolError("rejoin peer certificate mismatch")
+            await socket.send(json.dumps({"method": "rejoin.history", "since": since,
+                                          "limit": 2}))
+            reply = json.loads(await socket.recv())
+        if reply.get("error") or not isinstance(reply.get("result"), dict):
+            raise ProtocolError("rejoin peer rejected history request")
+        result = reply["result"]
+        if result.get("epoch_digest") != epoch_digest:
+            raise ProtocolError("rejoin history epoch mismatch")
+        events = [RejoinEnvelope(**event) for event in result["events"]]
+        for sequence, event in enumerate(events, start=since + 1):
+            event.verify(sequence, parent_digest)
+            parent_digest = event.digest
+        return events
 
     async def publish(self, event: BetCommit | BetSuffixReveal | StakeCertificate
                       | RoundHeartbeat, round_number: int | None = None,
@@ -171,7 +211,16 @@ class BetPeerRelay:
             raise ProtocolError("unauthorized bet relay peer")
         async for raw in socket:
             try:
-                result = await self._store_and_forward(json.loads(raw), sender=identity.node_id)
+                message = json.loads(raw)
+                if not isinstance(message, dict):
+                    raise ProtocolError("invalid peer request")
+                if message.get("method") == "rejoin.history":
+                    result = await sandbox_request(
+                        self.socket_path, "rejoin.history",
+                        extra={"since": message.get("since"), "limit": message.get("limit", 1)},
+                    )
+                else:
+                    result = await self._store_and_forward(message, sender=identity.node_id)
                 response = {"result": result}
             except (ProtocolError, KeyError, TypeError, ValueError) as exc:
                 response = {"error": str(exc)}

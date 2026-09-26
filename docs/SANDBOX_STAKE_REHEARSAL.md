@@ -117,6 +117,16 @@ prove consensus safety. Disclosing bet 4 exposes bets 4 through 10 by design.
 
 ## Acceptance gates for live admission
 
+The experimental rejoin API records accepted non-heartbeat sandbox events in
+`rejoin-history.json`. An authenticated relay peer can request at most two
+events per `rejoin.history` call. A node in `rejoin.begin` mode queues incoming
+consensus events durably, without advancing its live round; this mode survives
+restart. Missed heartbeats are discarded rather than persisted as consensus
+history. **Do not promote a rejoining node yet:** state checkpoints are not
+quorum-certified, the history/state writes are not one atomic transaction, and
+the queued events are not yet replayed against an independently verified state.
+An empty relay retry file therefore does not establish consensus catch-up.
+
 1. Commit the backed stake allocation and its pinned Ed25519 public keys in a
    quorum-certified ledger epoch. Prevent a stake coin from backing two keys at
    once, and require both old and new certificates at an epoch transition.
