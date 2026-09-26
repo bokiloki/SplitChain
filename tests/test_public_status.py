@@ -28,6 +28,16 @@ def test_public_endpoint_restricts_methods_and_paths(monkeypatch):
     try:
         with urlopen(url + "/") as response:
             assert b"Join with a pinned genesis" in response.read()
+        with urlopen(url + "/downloads") as response:
+            downloads = response.read()
+            assert response.headers.get_content_type() == "text/html"
+            assert b"SplitChain-Testnet-debug.apk" in downloads
+            assert b"__SPLITCHAIN_BASE__" not in downloads
+        with urlopen(url + "/wallet.js") as response:
+            wallet_js = response.read()
+            assert response.headers.get_content_type() == "text/javascript"
+            assert b"__SPLITCHAIN_BASE__" not in wallet_js
+            assert b"https://bokiloki.ddns.net/" in wallet_js
         for page in ("genesis", "status", "leadership", "bootstrap", "nodes"):
             with urlopen(url + "/explore/" + page) as response:
                 body = response.read()
