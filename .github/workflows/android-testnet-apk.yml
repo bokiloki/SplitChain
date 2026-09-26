@@ -32,14 +32,16 @@ jobs:
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
       - name: Name installable APK
         run: cp android-wallet/app/build/outputs/apk/debug/app-debug.apk SplitChain-Testnet-debug.apk
+      - name: Checksum published APK
+        run: sha256sum SplitChain-Testnet-debug.apk > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: SplitChain-Testnet-debug-apk
-          path: SplitChain-Testnet-debug.apk
+          path: |\n            SplitChain-Testnet-debug.apk\n            SHA256SUMS.txt
           if-no-files-found: error
       - name: Publish stable testnet download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view testnet-wallet-latest >/dev/null 2>&1 || gh release create testnet-wallet-latest --target "${GITHUB_SHA}" --title 'SplitChain testnet Android wallet' --notes 'Experimental, valueless testnet wallet. Debug APK for public sandbox testing; never use with assets of value.' --prerelease
-          gh release upload testnet-wallet-latest SplitChain-Testnet-debug.apk --clobber
+          gh release upload testnet-wallet-latest SplitChain-Testnet-debug.apk SHA256SUMS.txt --clobber\n          gh release edit testnet-wallet-latest --notes "Experimental valueless testnet debug APK built from commit ${GITHUB_SHA}. Debug signing keys may change between builds; back up account credentials before reinstalling."
