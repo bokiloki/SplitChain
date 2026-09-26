@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import pytest
+import websockets
 
 from splitchain import public_status
 from splitchain.auth import RequestAuthenticator
@@ -141,3 +142,40 @@ def test_public_status_only_proxies_enrollment_routes(tmp_path, monkeypatch):
             server.server_close()
         for thread in threads:
             thread.join()
+
+
+def test_new_wallet_authenticates_on_both_replicas_without_restart(tmp_path):
+    async def scenario():
+        secrets = {"testnet_operator": "o" * 64, "alice": "a" * 64}
+        registry = tmp_path / "accounts.json"
+        registry.write_text(json.dumps(secrets))
+        cluster_secret = "cluster-secret-at-least-32-characters"
+        secondary = ReferenceNode(
+            {"alice": 100}, state_path=tmp_path / "secondary.json", auth_secrets=secrets,
+            auth_secrets_path=registry, node_id="secondary", role="secondary",
+            cluster_secret=cluster_secret)
+        async with websockets.serve(secondary.handler, "127.0.0.1", 0) as server:
+            primary = ReferenceNode(
+                {"alice": 100}, state_path=tmp_path / "primary.json", auth_secrets=secrets,
+                auth_secrets_path=registry, node_id="primary", role="primary",
+                cluster_secret=cluster_secret,
+                peer_urls={"secondary": f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}"})
+
+            async def signed(method, params, actor, nonce, secret):
+                request = {"id": f"{actor}-{nonce}", "method": method, "params": params}
+                request["auth"] = RequestAuthenticator.sign(request, actor, nonce, secret)
+                return await primary.dispatch(request)
+
+            assert "result" in await signed("account.register", {"account": "sc12345678"},
+                                            "testnet_operator", 1, "o" * 64)
+            offer = await signed("offer", {"sender": "alice", "receiver": "sc12345678", "value": 1},
+                                 "alice", 1, "a" * 64)
+            assert "result" in offer
+            registry.write_text(json.dumps({**secrets, "sc12345678": "n" * 64}))
+            result = await signed("accept", {"branch_id": offer["result"]["branch_id"],
+                                             "receiver": "sc12345678"}, "sc12345678", 1, "n" * 64)
+            assert result["result"]["state"] == "accepted"
+            assert primary.ledger.snapshot() == secondary.ledger.snapshot()
+            assert secondary.authenticator.knows("sc12345678")
+
+    asyncio.run(scenario())
