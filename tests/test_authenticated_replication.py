@@ -38,6 +38,8 @@ def test_signed_test_tokens_replicate_and_replay_is_fenced_on_restart(tmp_path):
                                     auth_secrets=SECRETS, node_id="primary", role="primary",
                                     cluster_secret=CLUSTER_SECRET,
                                     peer_urls={"secondary": f"ws://127.0.0.1:{port}"})
+            assert "result" in await primary.dispatch(signed(
+                "account.register", {"account": "bob"}, "testnet_operator", 1))
             offer = signed("offer", {"sender": "testnet_faucet", "receiver": "bob",
                                      "value": 10}, "testnet_faucet", 1)
             invalid = signed("offer", {"sender": "testnet_faucet", "receiver": "bob",
@@ -54,7 +56,7 @@ def test_signed_test_tokens_replicate_and_replay_is_fenced_on_restart(tmp_path):
                 "commit", {"branch_id": branch_id, "sender": "testnet_faucet",
                            "payload": {"memo": "sandbox"}}, "testnet_faucet", 2))
             assert "result" in await primary.dispatch(signed(
-                "advance", {"rounds": 3}, "testnet_operator", 1))
+                "advance", {"rounds": 3}, "testnet_operator", 2))
             assert primary.ledger.snapshot() == secondary.ledger.snapshot()
             assert primary.ledger.balances["bob"] == 10
             assert primary.ledger.balances["testnet_locked_reserve"] == 7_000_000
@@ -62,7 +64,7 @@ def test_signed_test_tokens_replicate_and_replay_is_fenced_on_restart(tmp_path):
                                   auth_secrets=SECRETS, node_id="secondary",
                                   role="secondary", cluster_secret=CLUSTER_SECRET)
         assert restarted.authenticator.snapshot() == {
-            "bob": 1, "testnet_faucet": 2, "testnet_operator": 1,
+            "bob": 1, "testnet_faucet": 2, "testnet_operator": 2,
         }
         assert restarted.ledger.balances["bob"] == 10
 

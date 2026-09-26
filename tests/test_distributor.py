@@ -54,6 +54,13 @@ def transport(distributor, ledger, authenticator, *, lose_offer=False):
     distributor.call = call
 
 
+def registered_ledger(plan):
+    ledger = Ledger(genesis=genesis())
+    for account in plan["recipients"]:
+        ledger.register_account(account)
+    return ledger
+
+
 def test_prepare_private_sms_and_idempotent_registry(tmp_path, capsys):
     registry, output, plan = setup_batch(tmp_path)
     registry_before = registry.read_bytes()
@@ -72,7 +79,7 @@ def test_prepare_private_sms_and_idempotent_registry(tmp_path, capsys):
 def test_complete_funding_and_restart_never_double_pays(tmp_path):
     registry, output, plan = setup_batch(tmp_path)
     accounts = json.loads(registry.read_text())
-    ledger = Ledger(genesis=genesis())
+    ledger = registered_ledger(plan)
     auth = RequestAuthenticator(accounts)
     distributor = Distributor(registry, output, genesis(), rpc_interval=0)
     transport(distributor, ledger, auth)
@@ -89,9 +96,9 @@ def test_complete_funding_and_restart_never_double_pays(tmp_path):
 
 
 def test_lost_offer_response_reconciles_without_duplicate(tmp_path):
-    registry, output, _ = setup_batch(tmp_path, count=1)
+    registry, output, plan = setup_batch(tmp_path, count=1)
     accounts = json.loads(registry.read_text())
-    ledger = Ledger(genesis=genesis())
+    ledger = registered_ledger(plan)
     auth = RequestAuthenticator(accounts)
     initial = Distributor(registry, output, genesis(), rpc_interval=0)
     transport(initial, ledger, auth, lose_offer=True)
@@ -130,7 +137,7 @@ def test_uncertain_absent_offer_stops_instead_of_double_sending(tmp_path):
 def test_full_100_friend_batch_totals_10000_units(tmp_path):
     registry, output, plan = setup_batch(tmp_path, count=100)
     assert plan["total"] == 10_000
-    ledger = Ledger(genesis=genesis())
+    ledger = registered_ledger(plan)
     auth = RequestAuthenticator(json.loads(registry.read_text()))
     distributor = Distributor(registry, output, genesis(), rpc_interval=0)
     transport(distributor, ledger, auth)

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#081623">
+  <title>Create a SplitChain testnet wallet</title>
+  <style>
+    :root{color-scheme:dark;font:16px/1.55 system-ui,sans-serif;background:#081723;color:#e7f3f5}
+    *{box-sizing:border-box}body{margin:0}main{width:min(640px,calc(100% - 28px));margin:48px auto 70px}
+    h1{font-size:clamp(2rem,8vw,3.2rem);line-height:1.1}p{color:#adc5cb}
+    section{background:#102837;border:1px solid #31545e;border-radius:14px;padding:22px;margin:20px 0}
+    button,a.button{display:inline-block;border:0;border-radius:10px;background:#69e5c5;color:#082329;
+      padding:13px 18px;min-height:48px;font:700 1rem system-ui;text-decoration:none;cursor:pointer;margin:5px 8px 5px 0}
+    code{color:#a6f6e3;overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#061b26;padding:14px;border-radius:9px}
+    .warning{border-left:4px solid #ffcd75;padding-left:13px}a{color:#69e5c5}
+    @media(max-width:580px){main{margin-top:24px}button,a.button{width:100%;text-align:center;margin:5px 0}}
+  </style>
+</head>
+<body><main>
+  <p><a href="/splitchain/">← SplitChain testnet</a></p>
+  <h1>Create a testnet wallet</h1>
+  <p>The wallet ID and credential are generated on this device. The operator must approve the account before it can receive or send test units. No request is uploaded from this page.</p>
+  <section>
+    <button type="button" id="generate">Generate wallet</button>
+    <div id="result" hidden>
+      <p>Wallet ID: <code id="account"></code></p>
+      <p>Credential: <code id="credential"></code></p>
+      <p class="warning">Save the download privately. Send the enrollment request only through a private channel to the testnet operator. It includes your credential so the current testnet can verify signed requests.</p>
+      <button type="button" id="download">Download private wallet file</button>
+      <button type="button" id="copy">Copy enrollment request</button>
+      <p id="message" role="status" aria-live="polite"></p>
+    </div>
+  </section>
+  <p>After approval, import the Wallet ID and Credential into the <a href="/splitchain/#wallet">browser wallet</a> or Android app. Test units have no monetary value.</p>
+  <script>
+  (() => {
+    'use strict';
+    let wallet;
+    const el = id => document.getElementById(id);
+    const hex = bytes => [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+    el('generate').addEventListener('click', () => {
+      wallet = {schema:'splitchain-wallet-enrollment/v1', network_id:'splitchain-public-testnet-candidate-1',
+        account:'sc' + hex(crypto.getRandomValues(new Uint8Array(8))),
+        credential:hex(crypto.getRandomValues(new Uint8Array(32)))};
+      el('account').textContent = wallet.account;
+      el('credential').textContent = wallet.credential;
+      el('result').hidden = false;
+      el('message').textContent = 'Save this credential now. Regenerating replaces it.';
+    });
+    el('download').addEventListener('click', () => {
+      if (!wallet) return;
+      const url = URL.createObjectURL(new Blob([JSON.stringify(wallet, null, 2) + '\n'], {type:'application/json'}));
+      const link = document.createElement('a'); link.href = url; link.download = wallet.account + '.wallet.json';
+      link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      el('message').textContent = 'Private wallet file downloaded. Keep it secure.';
+    });
+    el('copy').addEventListener('click', async () => {
+      if (!wallet) return;
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(wallet));
+        el('message').textContent = 'Enrollment request copied. Send it privately to the operator.';
+      } catch (_) { el('message').textContent = 'Clipboard unavailable. Download the file instead.'; }
+    });
+  })();
+  </script>
+</main></body></html>

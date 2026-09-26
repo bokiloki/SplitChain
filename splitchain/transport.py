@@ -39,6 +39,7 @@ class PeerIdentity:
         "commit": frozenset({"client"}),
         "cancel": frozenset({"client"}),
         "advance": frozenset({"primary", "secondary", "tertiary", "overlord"}),
+        "account.register": frozenset({"overlord"}),
     }
 
     def authorize(self, method: str | None) -> None:

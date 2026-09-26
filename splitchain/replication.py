@@ -54,7 +54,7 @@ class ReplicationAuthenticator:
         if leader != expected_leader or nonce <= last_nonce or not valid:
             raise ProtocolError("invalid or replayed replication envelope")
         if not isinstance(mutation, dict) or mutation.get("method") not in {
-            "offer", "accept", "commit", "cancel", "advance"
+            "offer", "accept", "commit", "cancel", "advance", "account.register"
         }:
             raise ProtocolError("replication envelope contains an invalid mutation")
         return leader, nonce, mutation

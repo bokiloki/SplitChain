@@ -56,7 +56,7 @@ def parse_peer_values(values: list[str]) -> dict[str, str]:
 
 
 class ReferenceNode:
-    MUTATING_METHODS: ClassVar[set[str]] = {"offer", "accept", "commit", "cancel", "advance"}
+    MUTATING_METHODS: ClassVar[set[str]] = {"offer", "accept", "commit", "cancel", "advance", "account.register"}
 
     def __init__(
         self,
@@ -238,6 +238,8 @@ class ReferenceNode:
                     result = self.ledger.cancel(**params).public()
                 elif method == "advance":
                     result = [b.public() for b in self.ledger.advance(**params)]
+                elif method == "account.register":
+                    result = self.ledger.register_account(**params)
                 else:
                     raise ProtocolError("unknown method")
                 if self.store and method in self.MUTATING_METHODS:
@@ -252,6 +254,8 @@ class ReferenceNode:
     def _verify_request_actor(
         self, request: dict, method: str | None, params: dict, *, record: bool = True
     ) -> None:
+        if method == "account.register" and not self.authenticator:
+            raise ProtocolError("account registration requires operator authentication")
         if not self.authenticator or method == "status":
             return
         actor = self.authenticator.verify(request, record=record)
@@ -263,8 +267,8 @@ class ReferenceNode:
         }.get(method)
         if actor_field and params.get(actor_field) != actor:
             raise ProtocolError("authenticated actor does not match request participant")
-        if method == "advance" and actor != "testnet_operator":
-            raise ProtocolError("only the testnet operator can advance rounds")
+        if method in {"advance", "account.register"} and actor != "testnet_operator":
+            raise ProtocolError("only the testnet operator can perform this action")
 
     def _apply_mutation(self, mutation: dict[str, Any], *, record_auth: bool = True) -> Any:
         method = mutation["method"]
@@ -285,6 +289,8 @@ class ReferenceNode:
             result = self.ledger.cancel(**params).public()
         elif method == "advance":
             result = [branch.public() for branch in self.ledger.advance(**params)]
+        elif method == "account.register":
+            result = self.ledger.register_account(**params)
         else:
             raise ProtocolError("unknown replicated mutation")
         if self.authenticator and record_auth:

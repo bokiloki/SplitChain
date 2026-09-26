@@ -21,6 +21,7 @@ def test_genesis_reserve_and_supply_restore(tmp_path):
     ledger, _, _ = store.load_full_node_state({}, genesis)
     with pytest.raises(ProtocolError, match="locked account"):
         ledger.offer("reserve", "faucet", 1)
+    ledger.register_account("user")
     branch = ledger.offer("faucet", "user", 10)
     ledger.accept(branch.branch_id, "user")
     ledger.commit(branch.branch_id, "faucet", {"test": 1})

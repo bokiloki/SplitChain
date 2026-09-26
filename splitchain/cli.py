@@ -44,7 +44,7 @@ async def rpc(
     response = await send(url)
     error = response.get("error", {})
     destination = leader_url or error.get("url")
-    if (follow_leader and method in {"offer", "accept", "commit", "cancel", "advance"}
+    if (follow_leader and method in {"offer", "accept", "commit", "cancel", "advance", "account.register"}
             and error.get("code") == "NOT_LEADER" and destination and destination != url):
         try:
             return await send(destination)
@@ -75,6 +75,7 @@ def main() -> None:
             "commit",
             "cancel",
             "advance",
+            "account.register",
             "ecosystem.demo",
         ),
     )
