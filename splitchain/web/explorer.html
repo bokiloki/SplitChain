@@ -9,7 +9,7 @@
 </style>
 </head>
 <body>
-<header><div class="wrap nav"><a class="brand" href="__SPLITCHAIN_BASE__">SPLIT<span>CHAIN</span></a><nav aria-label="Explorer pages"><a data-page="genesis" href="__SPLITCHAIN_BASE__explore/genesis">Genesis</a><a data-page="status" href="__SPLITCHAIN_BASE__explore/status">Ledger</a><a data-page="leadership" href="__SPLITCHAIN_BASE__explore/leadership">Leadership</a><a data-page="bootstrap" href="__SPLITCHAIN_BASE__explore/bootstrap">Join</a></nav></div></header>
+<header><div class="wrap nav"><a class="brand" href="__SPLITCHAIN_BASE__">SPLIT<span>CHAIN</span></a><nav aria-label="Explorer pages"><a data-page="genesis" href="__SPLITCHAIN_BASE__explore/genesis">Genesis</a><a data-page="status" href="__SPLITCHAIN_BASE__explore/status">Ledger</a><a data-page="nodes" href="__SPLITCHAIN_BASE__explore/nodes">Nodes</a><a data-page="leadership" href="__SPLITCHAIN_BASE__explore/leadership">Leadership</a><a data-page="bootstrap" href="__SPLITCHAIN_BASE__explore/bootstrap">Join</a></nav></div></header>
 <main class="wrap"><div class="eyebrow">Public sandbox · live testnet</div><h1 id="title">Explore SplitChain</h1><p id="description">Loading network information…</p><div class="actions"><a class="button" href="__SPLITCHAIN_BASE__">← Testnet home</a><a class="button" id="raw" href="#">View raw JSON ↗</a></div><p id="message" role="status" class="notice hidden"></p><div id="cards" class="grid" aria-live="polite"></div><section class="card" style="margin-top:18px"><h2>Complete response</h2><pre id="raw-data">Loading…</pre></section></main>
 <footer class="footer"><div class="wrap">Experimental SplitChain sandbox · test units have no monetary value · <a href="https://github.com/bokiloki/SplitChain">Source code ↗</a></div></footer>
 <script>
@@ -19,6 +19,7 @@
   const pages = {
     genesis: {title:'Genesis & supply', description:'The pinned starting allocation of every test unit. The reserve is locked by protocol rules.', endpoint:'genesis.json'},
     status: {title:'Live ledger', description:'Current canonical ledger state reported by a running node. Reload to see a fresh snapshot.', endpoint:'status'},
+    nodes: {title:'Network nodes', description:'Live responses from Primary, Secondary, and Tertiary. Matching heads show the same finalized ledger state.', endpoint:'nodes'},
     leadership: {title:'Node leadership', description:'Current leadership and replica state reported by a running node.', endpoint:'leadership'},
     bootstrap: {title:'Join the testnet', description:'Verify the pinned genesis and discover the public status and WebSocket RPC endpoints.', endpoint:'.well-known/splitchain-testnet.json'}
   };
@@ -52,9 +53,11 @@
     else {table.append(tbody);card.append(title,table)}
     cards.append(card);
   };
-  fetch(base + config.endpoint, {cache:'no-store'}).then(async response => {
+  const refresh = () => fetch(base + config.endpoint, {cache:'no-store'}).then(async response => {
     if (!response.ok) throw Error('Endpoint returned HTTP ' + response.status);
-    const data = await response.json(); document.getElementById('raw-data').textContent = JSON.stringify(data,null,2);
+    const data = await response.json(); cards.replaceChildren();
+    document.getElementById('message').classList.add('hidden');
+    document.getElementById('raw-data').textContent = JSON.stringify(data,null,2);
     if (page === 'genesis') {
       add('Network ID',data.network_id,true);add('Maximum supply',Number(data.max_supply).toLocaleString());add('Locked reserve',Number((data.allocations||{}).testnet_locked_reserve||0).toLocaleString());
       section('Initial allocations',data.allocations);section('Locked accounts',Object.fromEntries((data.locked_accounts||[]).map(name=>[name,'Locked'])));
@@ -62,6 +65,14 @@
       const result=data.result||{};add('Responding node',data.source);add('Canonical height',result.canonical_head?.height);add('Current round',result.round);
       add('Canonical digest',result.canonical_head?.digest,true);add('Finalized transfers',(result.finalized||[]).length);add('Pending sessions',(result.branches||[]).length);
       section('Account balances',result.balances);section('Locked balances',result.locked);
+    } else if (page === 'nodes') {
+      add('Online nodes',data.online + ' / ' + data.total);
+      add('Ledger heads',data.heads_agree ? 'All agree' : 'Check nodes');
+      add('Last checked',new Date().toLocaleTimeString());
+      for (const node of data.nodes) {
+        section(node.name + ' · ' + node.state,
+          {height:node.height ?? '—', round:node.round ?? '—', digest:node.digest ?? '—'});
+      }
     } else if (page === 'leadership') {
       add('Responding node',data.source);const result=data.result||{};
       for (const [key,value] of Object.entries(result)) if (value===null||typeof value!=='object') add(key.replaceAll('_',' '),value,String(value).length>24);
@@ -75,6 +86,8 @@
     document.getElementById('message').textContent = 'Network data unavailable: ' + error.message;
     document.getElementById('raw-data').textContent = 'No response available.';
   });
+  refresh();
+  if (page === 'nodes') setInterval(refresh, 15000);
 })();
 </script>
 </body>

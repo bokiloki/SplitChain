@@ -28,7 +28,7 @@ def test_public_endpoint_restricts_methods_and_paths(monkeypatch):
     try:
         with urlopen(url + "/") as response:
             assert b"Join with a pinned genesis" in response.read()
-        for page in ("genesis", "status", "leadership", "bootstrap"):
+        for page in ("genesis", "status", "leadership", "bootstrap", "nodes"):
             with urlopen(url + "/explore/" + page) as response:
                 body = response.read()
                 assert response.headers.get_content_type() == "text/html"
@@ -56,3 +56,27 @@ def test_public_endpoint_restricts_methods_and_paths(monkeypatch):
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_node_status_marks_missing_or_different_heads(monkeypatch):
+    def probe(backend):
+        name = backend.removeprefix("ws://").split(":")[0]
+        return {"name": name, "state": "online", "height": 2,
+                "digest": "same", "round": 5}
+
+    monkeypatch.setattr(public_status, "fetch_node_status", probe)
+    matching = public_status.fetch_nodes()
+    assert matching["online"] == 3
+    assert matching["heads_agree"] is True
+    assert [node["name"] for node in matching["nodes"]] == [
+        "primary", "secondary", "tertiary",
+    ]
+
+    def different(backend):
+        node = probe(backend)
+        if node["name"] == "tertiary":
+            node["digest"] = "different"
+        return node
+
+    monkeypatch.setattr(public_status, "fetch_node_status", different)
+    assert public_status.fetch_nodes()["heads_agree"] is False
