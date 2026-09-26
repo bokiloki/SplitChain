@@ -31,7 +31,7 @@ class RequestAuthenticator:
         ).hexdigest()
         return {"actor": actor, "nonce": nonce, "signature": signature}
 
-    def verify(self, request: dict[str, Any]) -> str:
+    def verify(self, request: dict[str, Any], *, record: bool = True) -> str:
         auth = request.get("auth")
         if not isinstance(auth, dict):
             raise ProtocolError("authenticated request required")
@@ -49,7 +49,8 @@ class RequestAuthenticator:
         ).hexdigest()
         if not hmac.compare_digest(expected, signature):
             raise ProtocolError("invalid request signature")
-        self._nonces[actor] = nonce
+        if record:
+            self._nonces[actor] = nonce
         return actor
 
     def snapshot(self) -> dict[str, int]:
