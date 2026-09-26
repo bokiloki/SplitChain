@@ -125,3 +125,17 @@ def test_uncertain_absent_offer_stops_instead_of_double_sending(tmp_path):
     with pytest.raises(DistributionError, match="uncertain offer"):
         asyncio.run(recovered.run(wait_finality=False))
     assert not ledger.branches
+
+
+def test_full_100_friend_batch_totals_10000_units(tmp_path):
+    registry, output, plan = setup_batch(tmp_path, count=100)
+    assert plan["total"] == 10_000
+    ledger = Ledger(genesis=genesis())
+    auth = RequestAuthenticator(json.loads(registry.read_text()))
+    distributor = Distributor(registry, output, genesis(), rpc_interval=0)
+    transport(distributor, ledger, auth)
+    asyncio.run(distributor.run(wait_finality=False))
+    ledger.advance(3)
+    assert len(ledger.branches) == 100
+    assert all(ledger.balances[a] == 100 for a in plan["recipients"])
+    assert ledger.balances["testnet_faucet"] == 14_000_000 - 10_000
