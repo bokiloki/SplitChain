@@ -1,5 +1,23 @@
 # Overlay: Docker Compose -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml
 services:
+  distributor:
+    profiles: ["operator"]
+    build: .
+    entrypoint: ["python", "-m", "splitchain.distributor"]
+    command: []
+    volumes:
+      # Mount the directory, not only accounts.json: preparation atomically replaces the file.
+      - ${TESTNET_OPERATOR_DIR:-/srv/splitchain-testnet}:/operator
+      - ./configs/testnet-genesis.json:/etc/splitchain/testnet-genesis.json:ro
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    networks: [default]
   primary:
     command: ["--host", "0.0.0.0", "--port", "8765", "--state", "/var/lib/splitchain/ledger.json", "--genesis", "/etc/splitchain/testnet-genesis.json", "--auth-secrets", "/run/splitchain/accounts.json", "--node-id", "primary", "--role", "primary", "--peer", "secondary=ws://secondary:8765", "--peer", "tertiary=ws://tertiary:8765"]
     environment:

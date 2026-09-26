@@ -122,6 +122,11 @@ does not enroll a consensus validator.
 
 ## Enroll and fund a tester
 
+To issue **100 ready-funded friend wallets at 100 test units each**, use the
+[operator batch distributor](FRIENDS_DISTRIBUTION.md); it keeps private SMS
+drafts on the server and resumes without duplicating transfers.
+
+
 The operator must first issue one private credential per participant. Use the
 provisioning script that writes a mode-0600 secret file, **never** send
 `accounts.json` to anyone. Because the registry is bind mounted by inode,
