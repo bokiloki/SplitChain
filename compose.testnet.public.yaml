@@ -53,7 +53,7 @@ services:
     entrypoint: ["python", "-m", "splitchain.public_status"]
     command: []
     environment:
-      TESTNET_BOOTSTRAP_URL: "https://${PUBLIC_TESTNET_DOMAIN:?set PUBLIC_TESTNET_DOMAIN in .env.single-host}/"
+      TESTNET_BOOTSTRAP_URL: "https://${PUBLIC_TESTNET_DOMAIN:?set PUBLIC_TESTNET_DOMAIN in .env.single-host}/splitchain/"
     ports: ["127.0.0.1:8088:8080"]
     volumes:
       - ./configs/testnet-genesis.json:/etc/splitchain/testnet-genesis.json:ro
