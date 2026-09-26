@@ -4,6 +4,10 @@
     handle @status {
         reverse_proxy status:8080
     }
+    @rpc path /rpc
+    handle @rpc {
+        reverse_proxy rpc:8089
+    }
     handle {
         respond "Only /status and /leadership are available on this valueless research testnet." 404
     }

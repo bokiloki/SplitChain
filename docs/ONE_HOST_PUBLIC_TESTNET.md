@@ -1,16 +1,17 @@
-# One-host valueless testnet with public status
+# One-host sandbox testnet with signed transfers
 
 This profile runs **three nodes in Docker on one server** using separate persistent
-volumes, the candidate testnet genesis, and loopback-only RPC ports. A small HTTP
-service makes `/status` and `/leadership` readable to the public over HTTPS. It
-rejects transaction requests. One host is a single failure domain, so three
+volumes, the candidate testnet genesis, and loopback-only node RPC ports.
+`/status` and `/leadership` are public over HTTPS, and provisioned accounts can
+submit signed transfers to the WebSocket `/rpc` endpoint. One host is a single
+failure domain, so three
 containers do **not** satisfy the independent-host release gate.
 
-The one-host nodes use the shared HMAC demo mode on a private Docker network.
-Keep the repository's transaction RPC ports off the public network. The public
-status service does not issue units or accept transfers. Public participation
-requires account authentication, a limited faucet, incident operations, and
-independent review before the transaction interface can be opened.
+The nodes share an HMAC cluster secret on a private Docker network. The public
+gateway permits only `offer`, `accept`, `commit`, and `cancel`. The leader and
+replicas verify account signatures and replay nonces. The operator creates
+accounts and distributes valueless test units manually; self-service enrollment,
+an automated faucet, incident procedures, and external review remain open.
 
 ## Server installation and startup
 
@@ -27,6 +28,9 @@ cd SplitChain
 umask 077
 cp .env.single-host.example .env.single-host
 sed -i "s/^SPLITCHAIN_CLUSTER_SECRET=$/SPLITCHAIN_CLUSTER_SECRET=$(openssl rand -hex 32)/" .env.single-host
+sudo install -d -m 0755 /srv/splitchain-testnet
+sudo python3 scripts/init_testnet_accounts.py /srv/splitchain-testnet/accounts.json
+sudo chown 65532:65532 /srv/splitchain-testnet/accounts.json
 docker compose --env-file .env.single-host \
   -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml config --quiet
 docker compose --env-file .env.single-host \
@@ -37,13 +41,16 @@ docker compose --env-file .env.single-host \
 
 Edit `PUBLIC_TESTNET_DOMAIN` in `.env.single-host` to an actual DNS name before
 starting bundled Caddy. Leave the random cluster secret in place; a changed
-secret breaks replica authentication. `.env.single-host` is ignored by Git and
+secret breaks replica authentication. Keep `accounts.json` private; only the
+individual account secret should be delivered to its owner. The node UID 65532
+must read this file. `.env.single-host` is ignored by Git and
 excluded from the Docker build. Back up the three Docker volumes and the exact
 genesis JSON; never run `down -v` unless deliberately resetting the testnet.
 
 The local node RPC addresses are `ws://127.0.0.1:8765` (Primary), `:8766`
 (Secondary), and `:8767` (Tertiary). The status service is locally reachable at
-`http://127.0.0.1:8088/status`. Check the three containers:
+`http://127.0.0.1:8088/status`; the signed transfer gateway listens at
+`ws://127.0.0.1:8089/rpc`. Check the three containers:
 
 ```bash
 docker compose --env-file .env.single-host \
@@ -88,14 +95,63 @@ Caddy obtains and renews a public certificate for the configured hostname.
 Check `https://YOUR_TESTNET_DOMAIN/status`. Do not start the Caddy profile while
 Nginx is bound to 80/443; use the existing Nginx configuration above.
 
+When using Nginx, also add this exact WebSocket location in the same HTTPS
+server block:
+
+```nginx
+location = /testnet/rpc {
+    proxy_pass http://127.0.0.1:8089/rpc;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 15s;
+}
+```
+
+For a test transfer, the operator places each actor's secret alone in a private
+`0600` file and gives it to that actor. Use unique, increasing nonces for each
+actor. These examples use Caddy's `/rpc` path; use `/testnet/rpc` with Nginx:
+
+```bash
+# Run on the server with umask 077; this prints no secret to the terminal.
+sudo python3 -c 'import json; print(json.load(open("/srv/splitchain-testnet/accounts.json"))["testnet_faucet"])' > faucet.secret
+sudo python3 -c 'import json; print(json.load(open("/srv/splitchain-testnet/accounts.json"))["bob"])' > bob.secret
+```
+
+Distribute `bob.secret` only to Bob. Generate separate files for other actors.
+Never send `accounts.json` to clients.
+
+```bash
+scplit rpc offer --url wss://YOUR_TESTNET_DOMAIN/rpc \
+  --params '{"sender":"testnet_faucet","receiver":"bob","value":10}' \
+  --actor testnet_faucet --secret-file ./faucet.secret --nonce 1
+scplit rpc accept --url wss://YOUR_TESTNET_DOMAIN/rpc \
+  --params '{"branch_id":"BRANCH_ID_FROM_OFFER","receiver":"bob"}' \
+  --actor bob --secret-file ./bob.secret --nonce 1
+scplit rpc commit --url wss://YOUR_TESTNET_DOMAIN/rpc \
+  --params '{"branch_id":"BRANCH_ID_FROM_OFFER","sender":"testnet_faucet","payload":{"memo":"sandbox"}}' \
+  --actor testnet_faucet --secret-file ./faucet.secret --nonce 2
+```
+
+The operator calls signed `advance --params '{"rounds":3}'` through the active
+leader's loopback node RPC (port 8765, 8766, or 8767), using actor
+`testnet_operator` and its private secret file. This finalizes the transfer
+after three rounds. The public gateway excludes `advance` and `cluster.sync`.
+
+```bash
+sudo python3 -c 'import json; print(json.load(open("/srv/splitchain-testnet/accounts.json"))["testnet_operator"])' > operator.secret
+scplit rpc advance --url ws://127.0.0.1:8765 --params '{"rounds":3}' \
+  --actor testnet_operator --secret-file ./operator.secret --nonce 1
+```
+
 ## MikroTik RB4011: WAN ports
 
 | Use | WAN port | Router action |
 | --- | --- | --- |
-| Public read-only HTTPS | TCP 443 | Forward to the server's private IP, port 443, if an HTTPS forward does not already exist. |
+| Public status and signed transfers over HTTPS | TCP 443 | Forward to the server's private IP, port 443, if an HTTPS forward does not already exist. |
 | TLS certificate issuance / HTTP redirect | TCP 80 | Forward to the same server, port 80, if using bundled Caddy; preserve an existing Nginx forward if using Nginx. |
 | Optional remote administration over an already configured WireGuard VPN | Its configured UDP listen port | Allow inbound on the router's **input** chain; no SplitChain port forwarding. |
-| SplitChain RPC (8765–8767), status upstream (8088) | None | **No WAN port forward**; all four bind to 127.0.0.1 on the server. |
+| Node RPC (8765–8767), status (8088), transfer gateway (8089) | None | **No WAN port forward**; all five bind to 127.0.0.1 on the server. |
 
 If the router already forwards 80/443 to Nginx on this server, keep those rules
 and use the Nginx locations above. If those ports point elsewhere, arrange an
@@ -112,11 +168,11 @@ Review existing NAT and **forward** filter rules before adding these; place any
 needed forwarding accept rule ahead of the WAN drop and limit it to the two
 destination ports and this server. WAN traffic to the router itself uses the
 **input** chain, which is relevant only if terminating WireGuard on the RB4011.
-No rule should forward TCP 8765, 8766, 8767, or 8088 from WAN. Confirm your
+No rule should forward TCP 8765, 8766, 8767, 8088, or 8089 from WAN. Confirm your
 domain resolves to your public IP and that your ISP supplies a reachable public
 address (CGNAT prevents normal inbound forwarding). Test from mobile data,
 outside your home LAN.
 
-The public endpoint is **informational only**. See
+The public transfer pilot is operator-curated and experimental. See
 [PUBLIC_TESTNET_PLAN.md](PUBLIC_TESTNET_PLAN.md) for the gates before an open
 transaction testnet.

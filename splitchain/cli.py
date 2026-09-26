@@ -7,7 +7,9 @@ import asyncio
 import json
 import uuid
 from dataclasses import asdict
+from pathlib import Path
 
+from .auth import RequestAuthenticator
 from .ecosystem import Ecosystem
 from .node_identity import generate_node_key
 from .simulator import run
@@ -21,10 +23,17 @@ async def rpc(
     tls: TLSMaterial | None = None,
     follow_leader: bool = True,
     leader_url: str | None = None,
+    actor: str | None = None,
+    secret: str | None = None,
+    nonce: int | None = None,
 ) -> dict:
     import websockets
 
     request = {"id": uuid.uuid4().hex[:8], "method": method, "params": params}
+    if actor is not None:
+        if not secret or nonce is None or nonce < 0:
+            raise ValueError("signed requests need a secret and nonnegative nonce")
+        request["auth"] = RequestAuthenticator.sign(request, actor, nonce, secret)
     ssl_context = tls.client_context() if tls else None
     async def send(destination: str) -> dict:
         async with websockets.connect(destination, max_size=64 * 1024, ssl=ssl_context) as socket:
@@ -75,6 +84,9 @@ def main() -> None:
     call.add_argument("--tls-cert", help="PEM client certificate")
     call.add_argument("--tls-key", help="PEM client private key")
     call.add_argument("--tls-ca", help="PEM certificate authority used to verify the server")
+    call.add_argument("--actor", help="account name for a signed testnet transfer")
+    call.add_argument("--secret-file", help="file holding only this account's secret")
+    call.add_argument("--nonce", type=int, help="monotonically increasing account nonce")
 
     sub.add_parser("ecosystem-demo", help="run an in-process application-to-node demonstration")
     keygen = sub.add_parser("keygen", help="create one node signing key on its host")
@@ -95,9 +107,13 @@ def main() -> None:
         if not isinstance(params, dict):
             parser.error("--params must be a JSON object")
         tls = TLSMaterial.from_values(args.tls_cert, args.tls_key, args.tls_ca)
+        if bool(args.actor) != bool(args.secret_file) or (args.actor and args.nonce is None):
+            parser.error("--actor, --secret-file, and --nonce must be supplied together")
+        secret = Path(args.secret_file).read_text(encoding="utf-8").strip() if args.secret_file else None
         print(json.dumps(asyncio.run(rpc(
             args.url, args.method, params, tls,
             follow_leader=not args.no_follow_leader, leader_url=args.leader_url,
+            actor=args.actor, secret=secret, nonce=args.nonce,
         )), indent=2))
 
 

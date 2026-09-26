@@ -7,7 +7,7 @@ SplitChain is an **experimental protocol and distributed-computing research ecos
 **Release direction:** [public valueless testnet, then audited mainnet](docs/PUBLIC_TESTNET_PLAN.md).
 For a closed pilot on three independent Docker hosts, use
 [compose.testnet.yaml](compose.testnet.yaml) and the [Docker testnet guide](docs/DOCKER_TESTNET.md).
-For a single server with three containers and a public, read-only HTTPS status
+For a single server with three containers and a public HTTPS status and signed transfer
 endpoint, follow [the one-host guide](docs/ONE_HOST_PUBLIC_TESTNET.md).
 The testnet gates and proposed 21,000,000-unit cap / 7,000,000-unit reserve are
 documented there; issuance limits are not yet implemented in consensus code.

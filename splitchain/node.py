@@ -211,8 +211,10 @@ class ReferenceNode:
                 return {"id": request_id, "result": result}
             if (method in self.MUTATING_METHODS and self.replication
                     and self.leadership and self.leadership.leader == self.node_id):
-                self._verify_request_actor(request, method, params)
-                result = await self.replicate_mutation({"method": method, "params": params})
+                mutation = {"method": method, "params": params}
+                if self.authenticator:
+                    mutation.update({"auth": request.get("auth"), "id": request_id})
+                result = await self.replicate_mutation(mutation)
                 return {"id": request_id, "result": result}
             if method in self.MUTATING_METHODS and self.replication and self.role != "standalone":
                 leader = self.leadership.leader
@@ -247,10 +249,12 @@ class ReferenceNode:
         except (ProtocolError, TypeError) as exc:
             return {"id": request_id, "error": {"code": "INVALID_REQUEST", "message": str(exc)}}
 
-    def _verify_request_actor(self, request: dict, method: str | None, params: dict) -> None:
+    def _verify_request_actor(
+        self, request: dict, method: str | None, params: dict, *, record: bool = True
+    ) -> None:
         if not self.authenticator or method == "status":
             return
-        actor = self.authenticator.verify(request)
+        actor = self.authenticator.verify(request, record=record)
         actor_field = {
             "offer": "sender",
             "accept": "receiver",
@@ -259,21 +263,33 @@ class ReferenceNode:
         }.get(method)
         if actor_field and params.get(actor_field) != actor:
             raise ProtocolError("authenticated actor does not match request participant")
+        if method == "advance" and actor != "testnet_operator":
+            raise ProtocolError("only the testnet operator can advance rounds")
 
-    def _apply_mutation(self, mutation: dict[str, Any]) -> Any:
+    def _apply_mutation(self, mutation: dict[str, Any], *, record_auth: bool = True) -> Any:
         method = mutation["method"]
         params = mutation.get("params", {})
+        request = {
+            "id": mutation.get("id"), "method": method, "params": params,
+            "auth": mutation.get("auth"),
+        }
+        if self.authenticator:
+            self._verify_request_actor(request, method, params, record=False)
         if method == "offer":
-            return self.ledger.offer(**params).public()
-        if method == "accept":
-            return self.ledger.accept(**params).public()
-        if method == "commit":
-            return self.ledger.commit(**params).public()
-        if method == "cancel":
-            return self.ledger.cancel(**params).public()
-        if method == "advance":
-            return [branch.public() for branch in self.ledger.advance(**params)]
-        raise ProtocolError("unknown replicated mutation")
+            result = self.ledger.offer(**params).public()
+        elif method == "accept":
+            result = self.ledger.accept(**params).public()
+        elif method == "commit":
+            result = self.ledger.commit(**params).public()
+        elif method == "cancel":
+            result = self.ledger.cancel(**params).public()
+        elif method == "advance":
+            result = [branch.public() for branch in self.ledger.advance(**params)]
+        else:
+            raise ProtocolError("unknown replicated mutation")
+        if self.authenticator and record_auth:
+            self.authenticator.verify(request)
+        return result
 
     def _save(self) -> None:
         if self.store:
@@ -459,7 +475,7 @@ class ReferenceNode:
             original = self.ledger
             self.ledger = trial
             try:
-                self._apply_mutation(mutation)
+                self._apply_mutation(mutation, record_auth=False)
             finally:
                 self.ledger = original
             self.replication_pending = envelope
@@ -500,7 +516,7 @@ class ReferenceNode:
             original = self.ledger
             self.ledger = trial
             try:
-                self._apply_mutation(mutation)
+                self._apply_mutation(mutation, record_auth=False)
             finally:
                 self.ledger = original
             nonce = self._committed_position() + 1
@@ -720,6 +736,7 @@ async def serve(
     cluster_secret: str | None = None,
     keyring: NodeKeyring | None = None,
     genesis: GenesisConfig | None = None,
+    auth_secrets: dict[str, str] | None = None,
 ) -> None:
     import websockets
 
@@ -733,6 +750,7 @@ async def serve(
         keyring=keyring,
         tls=tls,
         genesis=genesis,
+        auth_secrets=auth_secrets,
     )
     ssl_context = tls.server_context() if tls else None
     async with websockets.serve(
@@ -759,6 +777,7 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--state", help="durable JSON ledger state path")
+    parser.add_argument("--auth-secrets", help="private JSON mapping account names to HMAC secrets")
     parser.add_argument("--genesis", help="versioned genesis JSON; required on each configured testnet node")
     parser.add_argument("--node-id", default="local", help="unique node identifier")
     parser.add_argument(
@@ -809,11 +828,18 @@ def main() -> None:
     try:
         keyring = NodeKeyring.from_files(args.role, args.node_key, args.peer_keys) if args.node_key else None
         genesis = GenesisConfig.from_dict(json.loads(Path(args.genesis).read_text(encoding="utf-8"))) if args.genesis else None
+        auth_secrets = json.loads(Path(args.auth_secrets).read_text(encoding="utf-8")) if args.auth_secrets else None
+        if auth_secrets is not None and (not isinstance(auth_secrets, dict) or any(
+                not isinstance(k, str) or not isinstance(v, str) or len(v) < 32
+                for k, v in auth_secrets.items())):
+            raise ProtocolError("invalid account secret registry")
+        if genesis and not auth_secrets and os.environ.get("SPLITCHAIN_PUBLIC_TRANSACTIONS") == "1":
+            raise ProtocolError("public transactions require account authentication")
     except (ProtocolError, OSError, ValueError) as exc:
         parser.error(str(exc))
     asyncio.run(serve(
         args.host, args.port, args.state, tls, peers, args.node_id, peer_urls,
-        args.role, cluster_secret, keyring, genesis,
+        args.role, cluster_secret, keyring, genesis, auth_secrets,
     ))
 
 
