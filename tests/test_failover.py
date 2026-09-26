@@ -1,5 +1,5 @@
 import hashlib
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import pytest
 
@@ -116,3 +116,47 @@ def test_recovery_rejects_regressed_or_impossible_state(field, value):
     snapshot[field] = value
     with pytest.raises(ProtocolError):
         LeadershipState.from_snapshot(authority, snapshot)
+
+
+def test_follower_accepts_certified_transition_once():
+    authority = FailoverAuthority(KEYS)
+    leader = LeadershipState(authority)
+    follower = LeadershipState(authority)
+    leader.submit(vote(authority, "secondary"))
+    certificate = leader.submit(vote(authority, "tertiary"))
+    follower.accept_certificate(certificate)
+    follower.accept_certificate(certificate)
+    assert follower.snapshot() == leader.snapshot()
+
+
+def test_follower_rejects_certificate_before_catching_up():
+    authority = FailoverAuthority(KEYS)
+    leader = LeadershipState(authority)
+    follower = LeadershipState(authority)
+    leader.heartbeat("primary", 0, 1, 5)
+    leader.submit(vote(authority, "secondary", tick=4, nonce=5))
+    certificate = leader.submit(vote(authority, "tertiary", tick=4, nonce=5))
+    original = follower.snapshot()
+    with pytest.raises(ProtocolError, match="committed position"):
+        follower.accept_certificate(certificate)
+    assert follower.snapshot() == original
+    follower.heartbeat("primary", 0, 1, 5)
+    follower.accept_certificate(certificate)
+    assert follower.snapshot() == leader.snapshot()
+
+
+def test_follower_rejects_conflicting_or_stale_certificate():
+    authority = FailoverAuthority(KEYS)
+    leader = LeadershipState(authority)
+    follower = LeadershipState(authority)
+    leader.submit(vote(authority, "secondary"))
+    certificate = leader.submit(vote(authority, "tertiary"))
+    with pytest.raises(ProtocolError, match="certificate"):
+        follower.accept_certificate(replace(certificate, digest="0" * 64))
+    assert follower.term == 0
+    follower.accept_certificate(certificate)
+    stale = LeadershipState(authority)
+    stale.submit(vote(authority, "secondary", tick=5))
+    different = stale.submit(vote(authority, "tertiary", tick=5))
+    with pytest.raises(ProtocolError, match="next term"):
+        follower.accept_certificate(different)

@@ -152,6 +152,32 @@ class LeadershipState:
             raise ProtocolError("all ordered leaders are exhausted")
         return ROLE_ORDER[index + 1]
 
+    def accept_certificate(self, certificate: LeadershipCertificate) -> None:
+        """Adopt a peer's next term only after verifying its entire signed transition."""
+        if certificate in self.certificates:
+            if certificate == self.certificates[-1]:
+                return
+            raise ProtocolError("stale leadership certificate")
+        if certificate.term != self.term + 1 or certificate.leader != self._successor():
+            raise ProtocolError("leadership certificate is not the next term")
+        if certificate.committed_nonce != self.committed_nonce:
+            raise ProtocolError("leadership certificate does not match local committed position")
+        if not certificate.votes:
+            raise ProtocolError("leadership certificate has no timeout votes")
+        candidate = self.snapshot()
+        candidate["term"] = certificate.term
+        candidate["leader"] = certificate.leader
+        candidate["last_heartbeat_tick"] = certificate.votes[0].observed_tick
+        candidate["certificates"].append(asdict(certificate))
+        verified = self.from_snapshot(self.authority, candidate)
+        if verified.last_heartbeat_tick < self.last_heartbeat_tick:
+            raise ProtocolError("leadership certificate regresses heartbeat time")
+        self.term = verified.term
+        self.leader = verified.leader
+        self.last_heartbeat_tick = verified.last_heartbeat_tick
+        self.votes.clear()
+        self.certificates.append(certificate)
+
     def snapshot(self) -> dict:
         return {
             "schema": "splitchain-leadership/v1",
