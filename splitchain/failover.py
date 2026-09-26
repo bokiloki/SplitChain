@@ -78,6 +78,28 @@ class FailoverAuthority:
         expected = hmac.new(key, canonical_json(vote.unsigned()), hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected, vote.signature)
 
+    def sign_heartbeat(self, leader: str, term: int, tick: int, nonce: int) -> dict:
+        payload = {"leader": leader, "term": term, "tick": tick, "nonce": nonce}
+        try:
+            key = self._keys[leader]
+        except KeyError as exc:
+            raise ProtocolError("unknown heartbeat leader") from exc
+        return {
+            **payload,
+            "signature": hmac.new(key, canonical_json(payload), hashlib.sha256).hexdigest(),
+        }
+
+    def verify_heartbeat(self, envelope: dict) -> bool:
+        try:
+            leader = envelope["leader"]
+            payload = {key: envelope[key] for key in ("leader", "term", "tick", "nonce")}
+            signature = envelope["signature"]
+            key = self._keys[leader]
+            expected = hmac.new(key, canonical_json(payload), hashlib.sha256).hexdigest()
+            return hmac.compare_digest(expected, signature)
+        except (KeyError, TypeError, ValueError):
+            return False
+
 
 class LeadershipState:
     QUORUM = 2

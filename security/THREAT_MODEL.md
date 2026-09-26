@@ -47,20 +47,25 @@ No certificate revocation, rate limit, global message ordering guarantee, or res
 The acknowledgement quorum is not yet crash-safe consensus: an acknowledgement lost after a
 replica prepares but before Primary commits leaves a durable non-mutating record that Primary
 aborts or completes after recovery. This closes the prior apply-before-decision divergence window,
-but it is not Byzantine consensus or automatic leader election. The shared HMAC secret must be
+but it is not Byzantine consensus or a crash-safe general-purpose election. The shared HMAC secret must be
 replaced by per-node hardware-backed signing
 keys before production use. There is no implementation of Overlords, PST triplets, slashing,
 failure proofs,
 counterproofs, reserve rewards, production-certified nodes, or governance.
 
 The failover safety core requires two signed timeout votes at one committed position and uses
-monotonic terms with ordered succession. It prevents unilateral promotion in the model, but its
-heartbeat/vote transport and client redirection are not yet wired into the live node process.
-The reference node now persists verified leadership certificates alongside its ledger and
-replication position. A node that has recorded a successor certificate fences further Primary
-replication and discards an uncommitted prepared mutation. Certificate receipt is currently
-an internal operation: no network certificate transport or automatic promotion is exposed.
-This does not provide unattended failover or authorize the successor to process client writes.
+monotonic terms with ordered succession. The reference node now exchanges signed heartbeats,
+timeout votes and certificates, persists verified leadership alongside its ledger, fences old
+leaders, and lets a certified successor process writes with a surviving replica. CLI clients
+can follow a reachable leader endpoint. A candidate refuses promotion if either survivor has
+an uncommitted prepared mutation, incomplete signed history, a different ledger state or a
+different committed position. An uncertain commit is reported explicitly to the client.
+These conservative conditions can halt progress after a partial commit or partition; manual
+investigation and recovery may be required. The shared HMAC secret lets a compromised node
+impersonate any role, wall-clock ticks assume reasonably synchronized hosts, and the election
+transport does not yet use independent production-grade identities or Byzantine consensus.
+Internal Compose hostnames returned as routes may not resolve from a host client; use the CLI's
+`--leader-url` override in that case. Never expose this research cluster to untrusted networks.
 
 `splitd` defaults to loopback. Do not expose it publicly or use it with assets.
 

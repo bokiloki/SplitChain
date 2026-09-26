@@ -18,14 +18,28 @@ async def rpc(
     method: str,
     params: dict,
     tls: TLSMaterial | None = None,
+    follow_leader: bool = True,
+    leader_url: str | None = None,
 ) -> dict:
     import websockets
 
     request = {"id": uuid.uuid4().hex[:8], "method": method, "params": params}
     ssl_context = tls.client_context() if tls else None
-    async with websockets.connect(url, max_size=64 * 1024, ssl=ssl_context) as socket:
-        await socket.send(json.dumps(request))
-        return json.loads(await socket.recv())
+    async def send(destination: str) -> dict:
+        async with websockets.connect(destination, max_size=64 * 1024, ssl=ssl_context) as socket:
+            await socket.send(json.dumps(request))
+            return json.loads(await socket.recv())
+
+    response = await send(url)
+    error = response.get("error", {})
+    destination = leader_url or error.get("url")
+    if (follow_leader and method in {"offer", "accept", "commit", "cancel", "advance"}
+            and error.get("code") == "NOT_LEADER" and destination and destination != url):
+        try:
+            return await send(destination)
+        except (OSError, TimeoutError):
+            return response
+    return response
 
 
 def main() -> None:
@@ -43,6 +57,7 @@ def main() -> None:
         choices=(
             "status",
             "cluster.status",
+            "cluster.leadership",
             "cluster.sync",
             "offer",
             "accept",
@@ -54,6 +69,8 @@ def main() -> None:
     )
     call.add_argument("--params", default="{}", help="JSON object")
     call.add_argument("--url", default="ws://127.0.0.1:8765")
+    call.add_argument("--no-follow-leader", action="store_true")
+    call.add_argument("--leader-url", help="reachable override for an internal leader endpoint")
     call.add_argument("--tls-cert", help="PEM client certificate")
     call.add_argument("--tls-key", help="PEM client private key")
     call.add_argument("--tls-ca", help="PEM certificate authority used to verify the server")
@@ -70,7 +87,10 @@ def main() -> None:
         if not isinstance(params, dict):
             parser.error("--params must be a JSON object")
         tls = TLSMaterial.from_values(args.tls_cert, args.tls_key, args.tls_ca)
-        print(json.dumps(asyncio.run(rpc(args.url, args.method, params, tls)), indent=2))
+        print(json.dumps(asyncio.run(rpc(
+            args.url, args.method, params, tls,
+            follow_leader=not args.no_follow_leader, leader_url=args.leader_url,
+        )), indent=2))
 
 
 if __name__ == "__main__":
