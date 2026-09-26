@@ -1,6 +1,7 @@
 # Independent three-node pilot
 
 This guide configures a **closed pilot** on three distinct hosts without Kubernetes.
+For a per-host Docker Compose deployment, follow [DOCKER_TESTNET.md](DOCKER_TESTNET.md).
 It is not permission to expose `splitd` to the public internet or to hold real assets.
 Use the public-testnet gates in [PUBLIC_TESTNET_PLAN.md](PUBLIC_TESTNET_PLAN.md).
 

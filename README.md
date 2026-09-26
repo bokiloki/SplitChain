@@ -5,6 +5,8 @@ SplitChain is an **experimental protocol and distributed-computing research ecos
 > **Status:** experimental and unaudited. The repository is a working research baseline, not a production blockchain and not suitable for real assets.
 
 **Release direction:** [public valueless testnet, then audited mainnet](docs/PUBLIC_TESTNET_PLAN.md).
+For a closed pilot on three independent Docker hosts, use
+[compose.testnet.yaml](compose.testnet.yaml) and the [Docker testnet guide](docs/DOCKER_TESTNET.md).
 The testnet gates and proposed 21,000,000-unit cap / 7,000,000-unit reserve are
 documented there; issuance limits are not yet implemented in consensus code.
 For a closed three-host pilot with distinct signing keys and mutual TLS, see
