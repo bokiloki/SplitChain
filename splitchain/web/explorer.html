@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#081623"><title>SplitChain · Testnet explorer</title>
+<style>
+:root{color-scheme:dark;--ink:#e7f3f5;--muted:#a2bac2;--line:#254451;--accent:#69e5c5;--surface:#102836}
+*{box-sizing:border-box}body{margin:0;color:var(--ink);background:radial-gradient(circle at 85% 5%,#184c57 0,transparent 32%),linear-gradient(155deg,#071522,#0b2030 55%,#071925);font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}a{color:var(--accent);text-underline-offset:4px}a:hover{color:#c8fff0}.wrap{width:min(1100px,calc(100% - 36px));margin:auto}header{border-bottom:1px solid var(--line);background:#071723db}.nav{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:70px;flex-wrap:wrap}.brand{font-weight:800;color:var(--ink);text-decoration:none;letter-spacing:.05em}.brand span{color:var(--accent)}nav{display:flex;gap:15px;flex-wrap:wrap}nav a{text-decoration:none;color:var(--muted)}nav a.active{color:var(--accent)}main{padding:55px 0 95px}.eyebrow{text-transform:uppercase;letter-spacing:.18em;font-size:.77rem;font-weight:750;color:var(--accent)}h1{font-size:clamp(2.2rem,5vw,4rem);letter-spacing:-.045em;line-height:1.08;margin:12px 0 16px}h2{font-size:1.25rem;margin:0 0 16px}p{color:var(--muted);max-width:780px}.actions{display:flex;gap:12px;flex-wrap:wrap;margin:25px 0 35px}.button{display:inline-block;border:1px solid #5b8790;color:var(--ink);border-radius:9px;padding:10px 14px;text-decoration:none}.button:hover{border-color:var(--accent)}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.card{background:#102837b8;border:1px solid var(--line);border-radius:14px;padding:22px;min-width:0}.card.wide{grid-column:span 3}.card small{display:block;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}.value{font-size:1.55rem;font-weight:720;margin:8px 0 0;overflow-wrap:anywhere}.value.long{font-size:.9rem;font-family:ui-monospace,Consolas,monospace}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px 9px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}th{color:var(--muted);font-size:.78rem;letter-spacing:.08em;text-transform:uppercase}td:last-child{text-align:right}code,pre{font-family:ui-monospace,Consolas,monospace}code{color:var(--accent);overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#071a26;border:1px solid var(--line);padding:18px;border-radius:11px;max-height:520px;overflow:auto}.notice{color:#ffcd75}.hidden{display:none}.footer{border-top:1px solid var(--line);padding:25px 0;color:var(--muted);font-size:.9rem}@media(max-width:760px){.grid{grid-template-columns:1fr}.card.wide{grid-column:auto}.nav{padding:16px 0}}
+</style>
+</head>
+<body>
+<header><div class="wrap nav"><a class="brand" href="__SPLITCHAIN_BASE__">SPLIT<span>CHAIN</span></a><nav aria-label="Explorer pages"><a data-page="genesis" href="__SPLITCHAIN_BASE__explore/genesis">Genesis</a><a data-page="status" href="__SPLITCHAIN_BASE__explore/status">Ledger</a><a data-page="leadership" href="__SPLITCHAIN_BASE__explore/leadership">Leadership</a><a data-page="bootstrap" href="__SPLITCHAIN_BASE__explore/bootstrap">Join</a></nav></div></header>
+<main class="wrap"><div class="eyebrow">Public sandbox · live testnet</div><h1 id="title">Explore SplitChain</h1><p id="description">Loading network information…</p><div class="actions"><a class="button" href="__SPLITCHAIN_BASE__">← Testnet home</a><a class="button" id="raw" href="#">View raw JSON ↗</a></div><p id="message" role="status" class="notice hidden"></p><div id="cards" class="grid" aria-live="polite"></div><section class="card" style="margin-top:18px"><h2>Complete response</h2><pre id="raw-data">Loading…</pre></section></main>
+<footer class="footer"><div class="wrap">Experimental SplitChain sandbox · test units have no monetary value · <a href="https://github.com/bokiloki/SplitChain">Source code ↗</a></div></footer>
+<script>
+(() => {
+  const base = '__SPLITCHAIN_BASE__';
+  const page = location.pathname.replace(/\/$/, '').split('/').pop();
+  const pages = {
+    genesis: {title:'Genesis & supply', description:'The pinned starting allocation of every test unit. The reserve is locked by protocol rules.', endpoint:'genesis.json'},
+    status: {title:'Live ledger', description:'Current canonical ledger state reported by a running node. Reload to see a fresh snapshot.', endpoint:'status'},
+    leadership: {title:'Node leadership', description:'Current leadership and replica state reported by a running node.', endpoint:'leadership'},
+    bootstrap: {title:'Join the testnet', description:'Verify the pinned genesis and discover the public status and WebSocket RPC endpoints.', endpoint:'.well-known/splitchain-testnet.json'}
+  };
+  const config = pages[page];
+  if (!config) return;
+  document.title = config.title + ' · SplitChain testnet';
+  document.getElementById('title').textContent = config.title;
+  document.getElementById('description').textContent = config.description;
+  document.querySelector(`[data-page="${page}"]`).classList.add('active');
+  document.getElementById('raw').href = base + config.endpoint;
+  const cards = document.getElementById('cards');
+  const add = (label, value, long=false) => {
+    const card = document.createElement('div'); card.className = 'card';
+    const small = document.createElement('small'); small.textContent = label;
+    const text = document.createElement('div'); text.className = 'value' + (long ? ' long' : '');
+    text.textContent = value == null ? '—' : String(value);
+    card.append(small, text); cards.append(card);
+  };
+  const section = (heading, rows) => {
+    const card = document.createElement('section'); card.className = 'card wide';
+    const title = document.createElement('h2'); title.textContent = heading;
+    const table = document.createElement('table');
+    const tbody = document.createElement('tbody');
+    for (const [key, value] of Object.entries(rows || {})) {
+      const tr = document.createElement('tr'); const a = document.createElement('td');
+      const b = document.createElement('td'); a.textContent = key;
+      b.textContent = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      tr.append(a,b); tbody.append(tr);
+    }
+    if (!tbody.children.length) {const p=document.createElement('p');p.textContent='No entries yet.';card.append(title,p)}
+    else {table.append(tbody);card.append(title,table)}
+    cards.append(card);
+  };
+  fetch(base + config.endpoint, {cache:'no-store'}).then(async response => {
+    if (!response.ok) throw Error('Endpoint returned HTTP ' + response.status);
+    const data = await response.json(); document.getElementById('raw-data').textContent = JSON.stringify(data,null,2);
+    if (page === 'genesis') {
+      add('Network ID',data.network_id,true);add('Maximum supply',Number(data.max_supply).toLocaleString());add('Locked reserve',Number((data.allocations||{}).testnet_locked_reserve||0).toLocaleString());
+      section('Initial allocations',data.allocations);section('Locked accounts',Object.fromEntries((data.locked_accounts||[]).map(name=>[name,'Locked'])));
+    } else if (page === 'status') {
+      const result=data.result||{};add('Responding node',data.source);add('Canonical height',result.canonical_head?.height);add('Current round',result.round);
+      add('Canonical digest',result.canonical_head?.digest,true);add('Finalized transfers',(result.finalized||[]).length);add('Pending sessions',(result.branches||[]).length);
+      section('Account balances',result.balances);section('Locked balances',result.locked);
+    } else if (page === 'leadership') {
+      add('Responding node',data.source);const result=data.result||{};
+      for (const [key,value] of Object.entries(result)) if (value===null||typeof value!=='object') add(key.replaceAll('_',' '),value,String(value).length>24);
+      section('Leadership details',Object.fromEntries(Object.entries(result).filter(([,v])=>v!==null&&typeof v==='object')));
+    } else {
+      add('Network ID',data.network_id,true);add('Test units',data.units);add('Genesis digest',data.genesis_digest,true);
+      section('Bootstrap endpoints',{manifest:data.manifest_url,genesis:data.genesis_url,status:data.status_url,'WebSocket RPC':data.rpc_url});
+    }
+  }).catch(error => {
+    document.getElementById('message').classList.remove('hidden');
+    document.getElementById('message').textContent = 'Network data unavailable: ' + error.message;
+    document.getElementById('raw-data').textContent = 'No response available.';
+  });
+})();
+</script>
+</body>
+</html>
