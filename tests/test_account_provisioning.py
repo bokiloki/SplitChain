@@ -1,8 +1,12 @@
 import json
+from pathlib import Path
+from runpy import run_path
 
 import pytest
 
-from scripts.add_testnet_account import add_account
+add_account = run_path(
+    str(Path(__file__).resolve().parents[1] / "scripts/add_testnet_account.py")
+)["add_account"]
 
 
 def test_new_account_keeps_private_files_and_refuses_overwrite(tmp_path):
