@@ -1,0 +1,31 @@
+# Overlay: Docker Compose -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml
+services:
+  status:
+    build: .
+    entrypoint: ["python", "-m", "splitchain.public_status"]
+    command: []
+    ports: ["127.0.0.1:8088:8080"]
+    read_only: true
+    user: "65532:65532"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.25
+    restart: unless-stopped
+  web:
+    profiles: ["caddy"]
+    image: caddy:2-alpine
+    environment:
+      TESTNET_DOMAIN: "${PUBLIC_TESTNET_DOMAIN:?set PUBLIC_TESTNET_DOMAIN in .env.single-host}"
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./configs/Caddyfile.testnet:/etc/caddy/Caddyfile:ro
+      - caddy-testnet-data:/data
+      - caddy-testnet-config:/config
+    depends_on: [status]
+    restart: unless-stopped
+
+volumes:
+  caddy-testnet-data:
+  caddy-testnet-config:

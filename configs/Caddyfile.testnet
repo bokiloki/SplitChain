@@ -1,0 +1,10 @@
+{$TESTNET_DOMAIN} {
+    encode zstd gzip
+    @status path /status /leadership
+    handle @status {
+        reverse_proxy status:8080
+    }
+    handle {
+        respond "Only /status and /leadership are available on this valueless research testnet." 404
+    }
+}

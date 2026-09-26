@@ -1,5 +1,6 @@
 .env
 .env.testnet
+.env.single-host
 testnet-private/
 __pycache__/
 *.py[cod]
