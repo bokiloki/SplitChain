@@ -9,6 +9,10 @@ For a closed pilot on three independent Docker hosts, use
 [compose.testnet.yaml](compose.testnet.yaml) and the [Docker testnet guide](docs/DOCKER_TESTNET.md).
 For a single server with three containers and a public HTTPS status and signed transfer
 endpoint, follow [the one-host guide](docs/ONE_HOST_PUBLIC_TESTNET.md).
+The deployment is configured to serve the sandbox landing page at
+[splitchain.bokiloki.ddns.net](https://splitchain.bokiloki.ddns.net/). Clients can
+run `scplit join-testnet --url https://splitchain.bokiloki.ddns.net/ --genesis configs/testnet-genesis.json`
+to compare its bootstrap manifest and hosted genesis with the reviewed local file.
 The testnet gates and proposed 21,000,000-unit cap / 7,000,000-unit reserve are
 documented there; issuance limits are not yet implemented in consensus code.
 For a closed three-host pilot with distinct signing keys and mutual TLS, see

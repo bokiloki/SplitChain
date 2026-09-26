@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from websockets.exceptions import WebSocketException
 from websockets.sync.client import connect
+
+from .bootstrap import manifest
+from .model import GenesisConfig, ProtocolError
 
 BACKENDS = (
     "ws://primary:8765", "ws://secondary:8765", "ws://tertiary:8765",
@@ -40,6 +44,34 @@ class Handler(BaseHTTPRequestHandler):
         self.connection.settimeout(5)
 
     def do_GET(self) -> None:
+        if self.path == "/":
+            try:
+                body = (Path(__file__).parent / "web/testnet.html").read_bytes()
+            except OSError:
+                self._send(503, {"error": "testnet page unavailable"})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path in {"/.well-known/splitchain-testnet.json", "/genesis.json"}:
+            try:
+                genesis = GenesisConfig.from_dict(json.loads(Path(
+                    os.environ.get("TESTNET_GENESIS_FILE", "/etc/splitchain/testnet-genesis.json")
+                ).read_text(encoding="utf-8")))
+                result = (manifest(os.environ.get(
+                    "TESTNET_BOOTSTRAP_URL", "https://splitchain.bokiloki.ddns.net/"
+                ), genesis) if self.path.endswith("splitchain-testnet.json") else genesis.public())
+            except (OSError, ValueError, ProtocolError):
+                self._send(503, {"error": "genesis unavailable"})
+                return
+            self._send(200, result)
+            return
         if self.path != urlsplit(self.path).path or self.path not in ROUTES:
             self._send(404, {"error": "unknown read-only endpoint"})
             return

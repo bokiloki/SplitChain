@@ -41,8 +41,9 @@ docker compose --env-file .env.single-host \
   -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml ps
 ```
 
-Edit `PUBLIC_TESTNET_DOMAIN` in `.env.single-host` to an actual DNS name before
-starting bundled Caddy. Leave the random cluster secret in place; a changed
+The sample `PUBLIC_TESTNET_DOMAIN` is `splitchain.bokiloki.ddns.net`. Point it
+to your public address and ensure your HTTPS certificate covers it. Leave the
+random cluster secret in place; a changed
 secret breaks replica authentication. Keep `accounts.json` private; only the
 individual account secret should be delivered to its owner. The node UID 65532
 must read this file. `.env.single-host` is ignored by Git and
@@ -71,20 +72,31 @@ disagree. With all nodes on one host, a host crash stops the whole cluster.
 ## HTTPS: existing Nginx or bundled Caddy
 
 If Nginx already owns ports 80/443 on your server, add these locations **inside
-the existing HTTPS server block** for your domain and reload Nginx. Keep its
+the HTTPS server block for `splitchain.bokiloki.ddns.net` and reload Nginx.
+If that hostname already serves another website, save its existing configuration
+before replacing its root route. Keep its
 existing certificate renewal and HTTP-to-HTTPS redirect. The upstream binds
 to loopback only; these exact paths are the only public ones:
 
 ```nginx
-location = /testnet/status {
+location = / {
+    proxy_pass http://127.0.0.1:8088/;
+}
+location = /.well-known/splitchain-testnet.json {
+    proxy_pass http://127.0.0.1:8088/.well-known/splitchain-testnet.json;
+}
+location = /genesis.json {
+    proxy_pass http://127.0.0.1:8088/genesis.json;
+}
+location = /status {
     proxy_pass http://127.0.0.1:8088/status;
 }
-location = /testnet/leadership {
+location = /leadership {
     proxy_pass http://127.0.0.1:8088/leadership;
 }
 ```
 
-Then request `https://YOUR_DOMAIN/testnet/status`. For a **dedicated testnet
+Then request `https://splitchain.bokiloki.ddns.net/`. For a **dedicated testnet
 hostname** on a server with free ports 80/443, set `PUBLIC_TESTNET_DOMAIN` and
 start the bundled Caddy profile instead:
 
@@ -94,14 +106,16 @@ docker compose --env-file .env.single-host --profile caddy \
 ```
 
 Caddy obtains and renews a public certificate for the configured hostname.
-Check `https://YOUR_TESTNET_DOMAIN/status`. Do not start the Caddy profile while
+Check `https://splitchain.bokiloki.ddns.net/` and
+`https://splitchain.bokiloki.ddns.net/.well-known/splitchain-testnet.json`.
+Do not start the Caddy profile while
 Nginx is bound to 80/443; use the existing Nginx configuration above.
 
 When using Nginx, also add this exact WebSocket location in the same HTTPS
 server block:
 
 ```nginx
-location = /testnet/rpc {
+location = /rpc {
     proxy_pass http://127.0.0.1:8089/rpc;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
@@ -110,9 +124,22 @@ location = /testnet/rpc {
 }
 ```
 
+The root URL is the **human-facing genesis entry point**. Clients discover the
+machine-readable manifest at `/.well-known/splitchain-testnet.json` and verify
+`/genesis.json` against the copy shipped in this repository:
+
+```bash
+scplit join-testnet --url https://splitchain.bokiloki.ddns.net/ \
+  --genesis configs/testnet-genesis.json
+```
+
+Joining as a validator also requires a separately approved signing identity,
+TLS peer registry, and independent-host setup; the URL alone does not grant
+consensus membership. Check the [independent node guide](INDEPENDENT_NODES.md).
+
 For a test transfer, the operator places each actor's secret alone in a private
 `0600` file and gives it to that actor. Use unique, increasing nonces for each
-actor. These examples use Caddy's `/rpc` path; use `/testnet/rpc` with Nginx:
+actor. These examples use `/rpc` on the dedicated hostname:
 
 ```bash
 # Run on the server with umask 077; this prints no secret to the terminal.

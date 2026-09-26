@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#081623">
+  <title>SplitChain · Sandbox Testnet</title>
+  <style>
+    :root { color-scheme: dark; --ink:#e7f3f5; --muted:#a2bac2; --line:#254451; --accent:#69e5c5; --warm:#ffcd75; --surface:#102836; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; color:var(--ink); background:radial-gradient(circle at 78% 6%,#184c57 0,transparent 36%),linear-gradient(155deg,#071522 0%,#0b2030 54%,#071925 100%); font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif; }
+    a { color:var(--accent); text-decoration-thickness:1px; text-underline-offset:4px; }
+    a:hover { color:#c8fff0; }
+    .wrap { width:min(1120px,calc(100% - 40px)); margin:auto; }
+    header { border-bottom:1px solid var(--line); backdrop-filter:blur(16px); background:#071723ba; position:sticky; top:0; z-index:5; }
+    .nav { display:flex; align-items:center; justify-content:space-between; gap:20px; min-height:68px; }
+    .brand { color:var(--ink); text-decoration:none; font-weight:800; letter-spacing:.04em; font-size:1.08rem; }
+    .brand span { color:var(--accent); }
+    .navlinks { display:flex; flex-wrap:wrap; gap:18px; font-size:.88rem; }
+    .navlinks a { color:var(--muted); text-decoration:none; }
+    .navlinks a:hover { color:var(--ink); }
+    main { padding-bottom:70px; }
+    .hero { padding:76px 0 54px; display:grid; grid-template-columns:1.2fr .8fr; gap:48px; align-items:center; }
+    .eyebrow { color:var(--accent); text-transform:uppercase; font-size:.76rem; letter-spacing:.18em; font-weight:750; }
+    h1 { font-size:clamp(2.7rem,6vw,5.2rem); letter-spacing:-.055em; line-height:1.04; margin:15px 0 20px; }
+    h2 { font-size:clamp(1.6rem,3vw,2.2rem); letter-spacing:-.03em; margin:0 0 12px; }
+    h3 { margin:0 0 8px; font-size:1.03rem; }
+    p { margin:0 0 18px; color:var(--muted); }
+    .lead { font-size:1.12rem; max-width:620px; }
+    .buttons { display:flex; gap:12px; flex-wrap:wrap; margin-top:28px; }
+    .button { background:var(--accent); color:#082329; font-weight:750; text-decoration:none; padding:12px 17px; border-radius:10px; }
+    .button:hover { color:#082329; background:#b3ffea; }
+    .button.secondary { background:transparent; border:1px solid #5b8790; color:var(--ink); }
+    .orb { aspect-ratio:1; max-width:360px; width:100%; margin:auto; border-radius:50%; display:grid; place-items:center; background:radial-gradient(circle,#265e66 3%,#153d4d 44%,#09202d 68%); box-shadow:0 0 90px #58ebc327,inset 0 0 60px #69e5c51d; border:1px solid #5dd9bd65; position:relative; }
+    .orb:before,.orb:after { content:""; width:80%; height:80%; position:absolute; border:1px solid #72edd37d; border-radius:50%; transform:rotateX(67deg) rotate(-24deg); }
+    .orb:after { transform:rotateY(67deg) rotate(30deg); width:96%; height:96%; }
+    .orb strong { text-align:center; line-height:1.2; letter-spacing:.18em; font-size:1.25rem; text-shadow:0 0 22px #96ffda; }
+    .banner { border:1px solid #8b7545; background:#7a571c2b; border-radius:12px; padding:13px 17px; color:#f9dca6; margin:0 0 48px; }
+    .section { margin-top:62px; }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:24px; }
+    .card { background:#102837b8; border:1px solid var(--line); border-radius:14px; padding:22px; min-width:0; }
+    .card small { color:var(--muted); text-transform:uppercase; letter-spacing:.1em; }
+    .metric { font-size:1.7rem; font-weight:750; margin:7px 0 0; color:var(--ink); overflow-wrap:anywhere; }
+    .metric.small { font-size:1rem; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+    .status-line { display:flex; align-items:center; gap:9px; color:var(--warm); }
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--warm); box-shadow:0 0 12px var(--warm); }
+    .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:24px; }
+    .step-number { color:var(--accent); font:700 .8rem ui-monospace,monospace; margin-bottom:13px; }
+    code,pre { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+    code { color:#b5fff0; overflow-wrap:anywhere; }
+    pre { background:#071a26; border:1px solid #2a505b; border-radius:12px; padding:18px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; color:#c9ede7; font-size:.85rem; }
+    .links { display:flex; flex-wrap:wrap; gap:11px; margin-top:18px; }
+    .links a { border:1px solid var(--line); border-radius:8px; padding:9px 12px; text-decoration:none; }
+    .footer { border-top:1px solid var(--line); padding:26px 0 40px; color:var(--muted); font-size:.88rem; }
+    @media(max-width:800px) { .hero { grid-template-columns:1fr; padding-top:48px; } .orb { width:220px; } .grid,.steps { grid-template-columns:1fr; } .nav { align-items:flex-start; padding:15px 0; flex-direction:column; gap:9px; } }
+  </style>
+</head>
+<body>
+  <header><div class="wrap nav"><a class="brand" href="/">SPLIT<span>CHAIN</span></a><nav class="navlinks" aria-label="Main navigation"><a href="#network">Network</a><a href="#join">Join</a><a href="#resources">Resources</a><a href="https://github.com/bokiloki/SplitChain">Source ↗</a></nav></div></header>
+  <main class="wrap">
+    <section class="hero"><div><div class="eyebrow">Public sandbox · experimental protocol</div><h1>SplitChain<br>Testnet</h1><p class="lead">Try branch-based transfers, replicated ledger state, and three-round finality with test units. This is a valueless sandbox. It can be reset, and its balances have no claim on future coins.</p><div class="buttons"><a class="button" href="#join">Join the sandbox</a><a class="button secondary" href="/genesis.json">View genesis JSON</a></div></div><div class="orb" aria-hidden="true"><strong>SPLIT<br>↘&nbsp;&nbsp;↙<br>MERGE</strong></div></section>
+    <div class="banner" role="note"><strong>Pilot notice:</strong> account access is provisioned by the operator. Three containers on one host do not provide independent validator resilience. The live network must be verified after deployment.</div>
+    <section class="section" id="network"><div class="eyebrow">Network snapshot</div><h2>Observe the ledger</h2><p>These values are read from the node status endpoint. “Unavailable” means the page cannot confirm the live node state.</p><div class="grid"><div class="card"><small>Endpoint</small><div id="node-state" class="metric status-line"><span class="dot"></span>Checking…</div></div><div class="card"><small>Canonical height</small><div id="height" class="metric">—</div></div><div class="card"><small>Current round</small><div id="round" class="metric">—</div></div><div class="card"><small>Network ID</small><div id="network-id" class="metric small">—</div></div><div class="card"><small>Genesis cap</small><div class="metric">21,000,000 <small>test units</small></div></div><div class="card"><small>Locked reserve</small><div class="metric">7,000,000 <small>test units</small></div></div></div></section>
+    <section class="section" id="join"><div class="eyebrow">Getting started</div><h2>Join with a pinned genesis</h2><p>The address of this page is the bootstrap origin. The machine-readable manifest lives at <a href="/.well-known/splitchain-testnet.json">/.well-known/splitchain-testnet.json</a>. The CLI checks it and the hosted genesis against your reviewed local copy.</p><div class="steps"><div class="card"><div class="step-number">01 / VERIFY</div><h3>Check the network</h3><p>Clone the repository and verify the published genesis digest before trusting the RPC address.</p></div><div class="card"><div class="step-number">02 / GET A TEST ACCOUNT</div><h3>Operator enrollment</h3><p>Request one account credential from the testnet operator. Keep its secret private and use a fresh nonce for each signed request.</p></div><div class="card"><div class="step-number">03 / TRANSFER</div><h3>Try a branch</h3><p>Use the signed WebSocket endpoint to offer, accept, and commit a transfer. The private round driver advances finality.</p></div></div><pre>git clone https://github.com/bokiloki/SplitChain.git
+cd SplitChain
+python3 -m venv .venv
+. .venv/bin/activate
+pip install .
+scplit join-testnet --url https://splitchain.bokiloki.ddns.net/ --genesis configs/testnet-genesis.json</pre><p>After enrollment, use <code>wss://splitchain.bokiloki.ddns.net/rpc</code> with <code>scplit rpc</code>. See the <a href="https://github.com/bokiloki/SplitChain/blob/main/docs/ONE_HOST_PUBLIC_TESTNET.md">step-by-step transfer guide</a> for signed requests and operator setup.</p></section>
+    <section class="section" id="resources"><div class="eyebrow">Reference links</div><h2>Inspect the network</h2><div class="links"><a href="/genesis.json">Genesis JSON</a><a href="/.well-known/splitchain-testnet.json">Bootstrap manifest</a><a href="/status">Live ledger JSON</a><a href="/leadership">Leadership JSON</a><a href="https://github.com/bokiloki/SplitChain/blob/main/docs/PUBLIC_TESTNET_PLAN.md">Release gates ↗</a><a href="https://github.com/bokiloki/SplitChain">GitHub ↗</a></div></section>
+  </main>
+  <footer class="footer"><div class="wrap">SplitChain research sandbox · test units have no monetary value · <a href="https://github.com/bokiloki/SplitChain/issues">Report an issue ↗</a></div></footer>
+  <script>
+    (async () => {
+      const label = document.getElementById('node-state');
+      try {
+        const [statusResponse, genesisResponse] = await Promise.all([fetch('/status', {cache:'no-store'}), fetch('/genesis.json', {cache:'no-store'})]);
+        if (!statusResponse.ok || !genesisResponse.ok) throw Error('Unavailable');
+        const status = await statusResponse.json(); const genesis = await genesisResponse.json();
+        if (!status.result || !status.result.canonical_head) throw Error('Unavailable');
+        label.textContent = 'Responding via ' + status.source;
+        document.getElementById('height').textContent = String(status.result.canonical_head.height);
+        document.getElementById('round').textContent = String(status.result.round);
+        document.getElementById('network-id').textContent = genesis.network_id;
+      } catch (_) { label.textContent = 'Unavailable'; }
+    })();
+  </script>
+</body>
+</html>

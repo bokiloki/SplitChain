@@ -10,6 +10,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .auth import RequestAuthenticator
+from .bootstrap import join
 from .ecosystem import Ecosystem
 from .node_identity import generate_node_key
 from .simulator import run
@@ -92,6 +93,9 @@ def main() -> None:
     keygen = sub.add_parser("keygen", help="create one node signing key on its host")
     keygen.add_argument("--role", required=True, choices=("primary", "secondary", "tertiary"))
     keygen.add_argument("--output", required=True, help="new private PEM file, never overwritten")
+    bootstrap = sub.add_parser("join-testnet", help="verify HTTPS bootstrap against local genesis")
+    bootstrap.add_argument("--url", default="https://splitchain.bokiloki.ddns.net/")
+    bootstrap.add_argument("--genesis", required=True, help="reviewed local genesis JSON path")
 
     args = parser.parse_args()
     if args.command == "simulate":
@@ -102,6 +106,8 @@ def main() -> None:
         print(json.dumps({"role": args.role, "public_key": generate_node_key(
             args.role, args.output
         )}, indent=2))
+    elif args.command == "join-testnet":
+        print(json.dumps(join(args.url, args.genesis), indent=2))
     else:
         params = json.loads(args.params)
         if not isinstance(params, dict):

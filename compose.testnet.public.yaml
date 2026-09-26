@@ -52,7 +52,11 @@ services:
     build: .
     entrypoint: ["python", "-m", "splitchain.public_status"]
     command: []
+    environment:
+      TESTNET_BOOTSTRAP_URL: "https://${PUBLIC_TESTNET_DOMAIN:?set PUBLIC_TESTNET_DOMAIN in .env.single-host}/"
     ports: ["127.0.0.1:8088:8080"]
+    volumes:
+      - ./configs/testnet-genesis.json:/etc/splitchain/testnet-genesis.json:ro
     read_only: true
     user: "65532:65532"
     cap_drop: [ALL]
