@@ -115,6 +115,24 @@ services:
     mem_limit: 128m
     cpus: 0.25
     restart: unless-stopped
+  olc-gateway:
+    build: .
+    entrypoint: ["python", "-m", "splitchain.olc_gateway"]
+    command: []
+    environment:
+      OLC_CREDENTIALS_FILE: /run/olc/credentials.json
+      OLC_STATE_FILE: /var/lib/olc/state.json
+    volumes:
+      - ${OLC_CREDENTIALS_FILE:-/srv/splitchain-testnet/olc/credentials.json}:/run/olc/credentials.json:ro
+      - olc-gateway-data:/var/lib/olc
+    read_only: true
+    user: "65532:65532"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 96
+    mem_limit: 128m
+    cpus: 0.5
+    restart: unless-stopped
   web:
     profiles: ["caddy"]
     image: caddy:2-alpine
@@ -129,6 +147,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  olc-gateway-data:
   round-clock-data:
   caddy-testnet-data:
   caddy-testnet-config:
