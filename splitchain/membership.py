@@ -112,6 +112,32 @@ class StakeMembership:
             if identity in voters and amount >= transaction_value
         ) >= self.quorum_stake
 
+    def proportional_delegation(self, departing: str, recipients: set[str]) -> StakeMembership:
+        """Calculate a proposed epoch; timeouts never activate it by themselves.
+
+        Assign integer remainders by largest fractional share, breaking ties
+        by identity so all nodes calculate the same allocation.
+        """
+        weights = dict(self.allocations)
+        if (departing not in weights or weights[departing] == 0
+                or not recipients or departing in recipients
+                or not recipients.issubset(weights)
+                or any(weights[name] == 0 for name in recipients)):
+            raise ProtocolError("invalid proportional stake delegation")
+        amount = weights[departing]
+        online = sum(weights[name] for name in recipients)
+        portions = {name: divmod(amount * weights[name], online) for name in recipients}
+        leftover = amount - sum(quotient for quotient, _ in portions.values())
+        ordered = sorted(recipients, key=lambda name: (-portions[name][1], name))
+        assigned = {name: portions[name][0] for name in recipients}
+        for name in ordered[:leftover]:
+            assigned[name] += 1
+        weights[departing] = 0
+        for name, share in assigned.items():
+            weights[name] += share
+        return StakeMembership(self.epoch + 1, tuple(sorted(weights.items())),
+                               self.backing_limit)
+
 
 @dataclass(frozen=True)
 class JointStakeMembership:
