@@ -82,6 +82,9 @@ class Store:
     def lease(self, node_id: str):
         with self.lock:
             now = time.time()
+            if any(job["node_id"] == node_id and job["state"] == "leased"
+                   and job["lease_until"] >= now for job in self.data["jobs"].values()):
+                return {"job": None}
             for job_id, job in self.data["jobs"].items():
                 if job["node_id"] == node_id and (job["state"] == "queued" or
                         job["state"] == "leased" and job["lease_until"] < now):
