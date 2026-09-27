@@ -9,7 +9,7 @@
 </style>
 </head>
 <body>
-<header><div class="wrap nav"><a class="brand" href="__SPLITCHAIN_BASE__">SPLIT<span>CHAIN</span></a><nav aria-label="Explorer pages"><a data-page="genesis" href="__SPLITCHAIN_BASE__explore/genesis">Genesis</a><a data-page="status" href="__SPLITCHAIN_BASE__explore/status">Ledger</a><a data-page="nodes" href="__SPLITCHAIN_BASE__explore/nodes">Nodes</a><a data-page="leadership" href="__SPLITCHAIN_BASE__explore/leadership">Leadership</a><a data-page="bootstrap" href="__SPLITCHAIN_BASE__explore/bootstrap">Join</a></nav></div></header>
+<header><div class="wrap nav"><a class="brand" href="__SPLITCHAIN_BASE__">SPLIT<span>CHAIN</span></a><nav aria-label="Explorer pages"><a data-page="genesis" href="__SPLITCHAIN_BASE__explore/genesis">Genesis</a><a data-page="status" href="__SPLITCHAIN_BASE__explore/status">Ledger</a><a data-page="nodes" href="__SPLITCHAIN_BASE__explore/nodes">Nodes</a><a data-page="workers" href="__SPLITCHAIN_BASE__explore/workers">Workers</a><a data-page="leadership" href="__SPLITCHAIN_BASE__explore/leadership">Leadership</a><a data-page="bootstrap" href="__SPLITCHAIN_BASE__explore/bootstrap">Join</a></nav></div></header>
 <main class="wrap"><div class="eyebrow">Public sandbox · live testnet</div><h1 id="title">Explore SplitChain</h1><p id="description">Loading network information…</p><div class="actions"><a class="button" href="__SPLITCHAIN_BASE__">← Testnet home</a><a class="button" id="raw" href="#">View raw JSON ↗</a></div><p id="message" role="status" class="notice hidden"></p><div id="cards" class="grid" aria-live="polite"></div><section class="card" style="margin-top:18px"><h2>Complete response</h2><pre id="raw-data">Loading…</pre></section></main>
 <footer class="footer"><div class="wrap">Experimental SplitChain sandbox · test units have no monetary value · <a href="https://github.com/bokiloki/SplitChain">Source code ↗</a></div></footer>
 <script>
@@ -20,6 +20,7 @@
     genesis: {title:'Genesis & supply', description:'The pinned starting allocation of every test unit. The reserve is locked by protocol rules.', endpoint:'genesis.json'},
     status: {title:'Live ledger', description:'Current canonical ledger state reported by a running node. Reload to see a fresh snapshot.', endpoint:'status'},
     nodes: {title:'Network nodes', description:'Live responses from Primary, Secondary, and Tertiary. Matching heads show the same finalized ledger state.', endpoint:'nodes'},
+    workers: {title:'OLC workers', description:'Registered test workers and their last reported capacities. These workers do not participate in ledger consensus.', endpoint:'workers'},
     leadership: {title:'Node leadership', description:'Current leadership and replica state reported by a running node.', endpoint:'leadership'},
     bootstrap: {title:'Join the testnet', description:'Verify the pinned genesis and discover the public status and WebSocket RPC endpoints.', endpoint:'.well-known/splitchain-testnet.json'}
   };
@@ -73,6 +74,9 @@
         section(node.name + ' · ' + node.state,
           {height:node.height ?? '—', round:node.round ?? '—', digest:node.digest ?? '—'});
       }
+    } else if (page === 'workers') {
+      add('Workers',data.workers.length);add('Online',data.workers.filter(worker=>worker.state==='online').length);
+      for (const worker of data.workers) section(worker.node_id + ' · ' + worker.state, worker.capabilities);
     } else if (page === 'leadership') {
       add('Responding node',data.source);const result=data.result||{};
       for (const [key,value] of Object.entries(result)) if (value===null||typeof value!=='object') add(key.replaceAll('_',' '),value,String(value).length>24);
@@ -87,7 +91,7 @@
     document.getElementById('raw-data').textContent = 'No response available.';
   });
   refresh();
-  if (page === 'nodes') setInterval(refresh, 15000);
+  if (page === 'nodes' || page === 'workers') setInterval(refresh, 15000);
 })();
 </script>
 </body>
