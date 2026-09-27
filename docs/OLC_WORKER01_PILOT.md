@@ -124,3 +124,17 @@ verifier public key without exposing either token. A new job should likewise gai
 after Worker01 returns its result. This is an auditable first verifier, not a
 TrueLies 2/3 quorum; two independently hosted verifiers and quorum rules remain
 to be implemented before settlement.
+
+Anyone with the project checkout can check the receipt signatures locally:
+
+```bash
+cd ~/SplitChain
+.venv/bin/python scripts/verify_olc_receipts.py \
+  --public-key 829f23e705afb32ecafbf7e4e7226f0337693160e88dfe0426a83211a57f0f89
+```
+
+That public key was observed during the first verifier deployment. Confirm it
+through a separately trusted channel when adding another verifier or changing
+keys. The command exits nonzero for invalid signatures, mismatched statements,
+an unexpected public key, or pending attestations. It verifies public evidence;
+it does not provide independent-host quorum or ledger settlement.
