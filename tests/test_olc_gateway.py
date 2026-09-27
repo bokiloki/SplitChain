@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from splitchain.model import canonical_json
 from splitchain.olc_gateway import EXPECTED, Handler, Store
+from splitchain.olc_verifier import load_key
 
 
 def test_worker_lifecycle(tmp_path):
@@ -73,6 +74,11 @@ def test_bad_result_is_rejected(tmp_path):
 
 def test_separate_verifier_attestation(tmp_path):
     key = Ed25519PrivateKey.generate()
+    private_path = tmp_path / "verifier-private.pem"
+    private_path.write_bytes(key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption()))
+    key = load_key(str(private_path))
     public = key.public_key().public_bytes(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
     store = Store(tmp_path / "state.json", {"workers": {"olc-worker-001": "w" * 40},
