@@ -129,6 +129,17 @@ class Store:
         with self.lock:
             return {"jobs": [{"job_id": key, **value} for key, value in self.data["jobs"].items()]}
 
+    def public_receipts(self):
+        with self.lock:
+            receipts = []
+            for job_id, job in list(self.data["jobs"].items())[-20:]:
+                receipts.append({"job_id": job_id, "node_id": job["node_id"],
+                                 "state": job["state"],
+                                 "result_digest": job.get("result_digest"),
+                                 "attestation": job.get("attestation")})
+            return {"schema": "olc-receipts/v1", "receipts": receipts,
+                    "verifier_public_key": self.credentials.get("verifier", {}).get("public_key")}
+
     def verifier_job(self):
         with self.lock:
             for job_id, job in self.data["jobs"].items():
@@ -202,6 +213,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/workers":
             return self._send(200, self.store.public_workers())
+        if self.path == "/receipts":
+            return self._send(200, self.store.public_receipts())
         if self.path == f"/worker/{NODE_ID}/job":
             if self._authorize(NODE_ID):
                 self._send(200, self.store.lease(NODE_ID))
