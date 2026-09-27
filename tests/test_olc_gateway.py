@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from splitchain.model import canonical_json
 from splitchain.olc_gateway import EXPECTED, Handler, Store
+from splitchain.olc_receipts import verify_document
 from splitchain.olc_verifier import load_key
 
 
@@ -105,3 +106,9 @@ def test_separate_verifier_attestation(tmp_path):
     assert public_receipts["verifier_public_key"] == public
     assert public_receipts["receipts"][0]["attestation"]["signature"] == signature
     assert "token" not in json.dumps(public_receipts)
+    assert verify_document(public_receipts, public) == (1, 0)
+    try:
+        verify_document(public_receipts, "0" * 64)
+        assert False, "wrong pinned key accepted"
+    except ValueError:
+        pass
