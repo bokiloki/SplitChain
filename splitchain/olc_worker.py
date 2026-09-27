@@ -42,7 +42,9 @@ def request(base: str, path: str, token: str, data: dict | None = None) -> dict:
 
 def sandbox_job() -> str:
     info = subprocess.run(["podman", "info", "--format", "{{.Host.Security.Rootless}}"],
-                          text=True, capture_output=True, timeout=15, check=True)
+                          text=True, capture_output=True, timeout=15, check=False)
+    if info.returncode:
+        raise RuntimeError("rootless Podman check failed: " + info.stderr.strip()[-500:])
     if info.stdout.strip() != "true":
         raise RuntimeError("rootless Podman required")
     command = ["podman", "run", "--rm", "--pull=never", "--network", "none", "--read-only",
@@ -50,7 +52,9 @@ def sandbox_job() -> str:
                "--cpus", "1", "--memory", "256m", "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m",
                "docker.io/library/debian:13", "sh", "-c",
                'printf "OLC Worker01 test job\\n" | sha256sum']
-    completed = subprocess.run(command, text=True, capture_output=True, timeout=45, check=True)
+    completed = subprocess.run(command, text=True, capture_output=True, timeout=45, check=False)
+    if completed.returncode:
+        raise RuntimeError("sandbox job failed: " + completed.stderr.strip()[-500:])
     if not re.fullmatch(r"[a-f0-9]{64}  -\n", completed.stdout):
         raise ValueError("unexpected sandbox result")
     return completed.stdout[:64]
@@ -76,6 +80,8 @@ def run(base: str, genesis: str, token_file: str, once: bool, interval: int):
     capabilities = {"cpu_threads": os.cpu_count() or 1,
                     "memory_mb": min(2_000_000, os.sysconf("SC_PAGE_SIZE") *
                                      os.sysconf("SC_PHYS_PAGES") // 1048576)}
+    # Confirm the local sandbox works in this service context before leasing a job.
+    sandbox_job()
     while True:
         request(base, f"worker/{NODE_ID}/heartbeat", token, {"capabilities": capabilities})
         result = request(base, f"worker/{NODE_ID}/job", token)
