@@ -133,6 +133,25 @@ services:
     mem_limit: 128m
     cpus: 0.5
     restart: unless-stopped
+  olc-verifier:
+    build: .
+    entrypoint: ["python", "-m", "splitchain.olc_verifier"]
+    command: []
+    environment:
+      OLC_VERIFIER_TOKEN_FILE: /run/olc/verifier-token
+      OLC_VERIFIER_KEY_FILE: /run/olc/verifier-private.pem
+    volumes:
+      - ${OLC_VERIFIER_DIR:-/srv/splitchain-testnet/olc}/verifier-token:/run/olc/verifier-token:ro
+      - ${OLC_VERIFIER_DIR:-/srv/splitchain-testnet/olc}/verifier-private.pem:/run/olc/verifier-private.pem:ro
+    depends_on: [olc-gateway]
+    read_only: true
+    user: "65532:65532"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.25
+    restart: unless-stopped
   web:
     profiles: ["caddy"]
     image: caddy:2-alpine
