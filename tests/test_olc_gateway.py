@@ -44,11 +44,14 @@ def test_worker_lifecycle(tmp_path):
                    {"kind": "sha256-fixed-v1", "node_id": "olc-worker-001"})
         leased = call("/worker/olc-worker-001/job", "w" * 40)
         assert leased["job_id"] == job["job_id"]
+        second = call("/operator/job", "o" * 40,
+                      {"kind": "sha256-fixed-v1", "node_id": "olc-worker-001"})
+        assert call("/worker/olc-worker-001/job", "w" * 40) == {"job": None}
         receipt = call("/worker/olc-worker-001/result", "w" * 40,
                        {"job_id": job["job_id"], "digest": EXPECTED})
         assert receipt == {"job_id": job["job_id"], "state": "verified",
                            "verification": "coordinator-sha256"}
-        assert call("/worker/olc-worker-001/job", "w" * 40) == {"job": None}
+        assert call("/worker/olc-worker-001/job", "w" * 40)["job_id"] == second["job_id"]
         assert Store(tmp_path / "state.json", credentials).operator_jobs()["jobs"][0]["state"] == "verified"
     finally:
         server.shutdown()
