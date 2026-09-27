@@ -23,8 +23,9 @@ BACKENDS = (
     "ws://primary:8765", "ws://secondary:8765", "ws://tertiary:8765",
 )
 ENROLLMENT_BACKEND = "http://enrollment:8090"
+OLC_BACKEND = "http://olc-gateway:8092"
 ROUTES = {"/status": "status", "/leadership": "cluster.leadership"}
-EXPLORER_PAGES = {"/explore/genesis", "/explore/status", "/explore/leadership", "/explore/bootstrap", "/explore/nodes"}
+EXPLORER_PAGES = {"/explore/genesis", "/explore/status", "/explore/leadership", "/explore/bootstrap", "/explore/nodes", "/explore/workers"}
 _nodes_limits: dict[str, tuple[float, int]] = {}
 _nodes_limits_lock = threading.Lock()
 _NODES_WINDOW = 60.0
@@ -96,11 +97,43 @@ def fetch_nodes() -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def _olc_proxy(self, method: str) -> None:
+        allowed_get = {"/workers", "/worker/olc-worker-001/job", "/operator/jobs"}
+        allowed_post = {"/worker/olc-worker-001/heartbeat", "/worker/olc-worker-001/result",
+                        "/operator/job"}
+        if self.path not in (allowed_get if method == "GET" else allowed_post):
+            self._send(404, {"error": "unknown worker endpoint"})
+            return
+        try:
+            data = None
+            if method == "POST":
+                length = int(self.headers.get("Content-Length", "-1"))
+                if not 0 <= length <= 2048:
+                    self._send(413, {"error": "invalid worker request length"})
+                    return
+                data = self.rfile.read(length)
+            headers = {"Content-Type": "application/json"}
+            if self.headers.get("Authorization"):
+                headers["Authorization"] = self.headers["Authorization"]
+            request = Request(OLC_BACKEND + self.path, data=data, headers=headers, method=method)
+            with urlopen(request, timeout=4) as response:
+                body = response.read(4097)
+                if len(body) > 4096:
+                    raise ValueError("worker response too large")
+                self._send(response.status, json.loads(body))
+        except HTTPError as exc:
+            self._send(exc.code, {"error": "worker request rejected"})
+        except (URLError, OSError, ValueError, TimeoutError):
+            self._send(503, {"error": "worker gateway unavailable"})
+
     def setup(self) -> None:
         super().setup()
         self.connection.settimeout(5)
 
     def do_GET(self) -> None:
+        if self.path in {"/workers", "/worker/olc-worker-001/job", "/operator/jobs"}:
+            self._olc_proxy("GET")
+            return
         if self.path == "/downloads":
             try:
                 base = os.environ.get("TESTNET_BOOTSTRAP_URL", "https://bokiloki.ddns.net/splitchain/")
@@ -230,6 +263,10 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, result)
 
     def do_POST(self) -> None:
+        if self.path in {"/worker/olc-worker-001/heartbeat", "/worker/olc-worker-001/result",
+                         "/operator/job"}:
+            self._olc_proxy("POST")
+            return
         if self.path in ("/enroll", "/enroll/check"):
             try:
                 length = int(self.headers.get("Content-Length", "-1"))
