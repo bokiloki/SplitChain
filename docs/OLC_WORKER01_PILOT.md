@@ -9,6 +9,13 @@ the expected SHA-256 and records `verified` or `rejected` in its own persistent
 volume. **This is coordinator verification, not TrueLies distributed quorum,
 SplitChain settlement, consensus membership, or general workload execution.**
 
+An optional second verifier runs as a separate process with its own Ed25519 key.
+It independently hashes the fixed input and signs an attestation bound to the
+job ID, worker ID, digest, and acceptance decision. This is one verifier on the
+same physical server as the gateway; it is **not** an independent-host quorum.
+The existing coordinator decision is retained, and a disagreeing attestation
+marks the job `disputed`.
+
 The two credentials are distinct. Never share the operator token with Worker01,
 publish either token, or open SSH/Podman to the Internet.
 
@@ -91,3 +98,27 @@ Worker01 with `journalctl --user -u olc-worker.service -n 30 --no-pager`.
 Only the fixed SHA-256 job is accepted by this pilot; unrecognized job kinds
 and mismatched digests are rejected. No token or untrusted job command is
 accepted from the public explorer.
+
+## Add the first signed verifier
+
+After the pilot has run successfully, on the **testnet server**:
+
+```bash
+git pull --ff-only
+sudo python3 scripts/init_olc_verifier.py /srv/splitchain-testnet/olc
+docker compose --env-file .env.single-host \
+  -f compose.testnet.single-host.yaml -f compose.testnet.public.yaml \
+  up -d --build --force-recreate olc-gateway olc-verifier
+sudo python3 scripts/olc_operator.py jobs
+```
+
+The credential script refuses to overwrite an existing verifier and keeps a
+root-only `credentials.json.pre-verifier` backup. Keep the verifier private key
+and token on the server; neither is copied to Worker01. The gateway and verifier
+containers communicate only on their private Docker network. The gateway
+container is recreated so its bind mount reads the updated credentials file.
+Within one poll interval each previously verified job receives an `attestation`
+object with the signed statement. A new job should likewise gain an attestation
+after Worker01 returns its result. This is an auditable first verifier, not a
+TrueLies 2/3 quorum; two independently hosted verifiers and quorum rules remain
+to be implemented before settlement.
