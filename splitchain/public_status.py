@@ -25,7 +25,7 @@ BACKENDS = (
 ENROLLMENT_BACKEND = "http://enrollment:8090"
 OLC_BACKEND = "http://olc-gateway:8092"
 ROUTES = {"/status": "status", "/leadership": "cluster.leadership"}
-EXPLORER_PAGES = {"/explore/genesis", "/explore/status", "/explore/leadership", "/explore/bootstrap", "/explore/nodes", "/explore/workers"}
+EXPLORER_PAGES = {"/explore/genesis", "/explore/status", "/explore/leadership", "/explore/bootstrap", "/explore/nodes", "/explore/workers", "/explore/jobs"}
 _nodes_limits: dict[str, tuple[float, int]] = {}
 _nodes_limits_lock = threading.Lock()
 _NODES_WINDOW = 60.0
@@ -98,7 +98,7 @@ def fetch_nodes() -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     def _olc_proxy(self, method: str) -> None:
-        allowed_get = {"/workers", "/worker/olc-worker-001/job", "/operator/jobs"}
+        allowed_get = {"/workers", "/receipts", "/worker/olc-worker-001/job", "/operator/jobs"}
         allowed_post = {"/worker/olc-worker-001/heartbeat", "/worker/olc-worker-001/result",
                         "/operator/job"}
         if self.path not in (allowed_get if method == "GET" else allowed_post):
@@ -131,7 +131,7 @@ class Handler(BaseHTTPRequestHandler):
         self.connection.settimeout(5)
 
     def do_GET(self) -> None:
-        if self.path in {"/workers", "/worker/olc-worker-001/job", "/operator/jobs"}:
+        if self.path in {"/workers", "/receipts", "/worker/olc-worker-001/job", "/operator/jobs"}:
             self._olc_proxy("GET")
             return
         if self.path == "/downloads":
