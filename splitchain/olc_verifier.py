@@ -10,11 +10,19 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from .model import canonical_json
 
 EXPECTED = hashlib.sha256(b"OLC Worker01 test job\n").hexdigest()
+
+
+def load_key(path: str) -> Ed25519PrivateKey:
+    key = serialization.load_pem_private_key(Path(path).read_bytes(), password=None)
+    if not isinstance(key, Ed25519PrivateKey):
+        raise TypeError("verifier key must be Ed25519")
+    return key
 
 
 def request(path: str, token: str, body: dict | None = None):
@@ -39,8 +47,7 @@ def verify_once(token: str, key: Ed25519PrivateKey):
 
 def main():
     token = Path(os.environ["OLC_VERIFIER_TOKEN_FILE"]).read_text().strip()
-    key_bytes = bytes.fromhex(Path(os.environ["OLC_VERIFIER_KEY_FILE"]).read_text().strip())
-    key = Ed25519PrivateKey.from_private_bytes(key_bytes)
+    key = load_key(os.environ["OLC_VERIFIER_KEY_FILE"])
     while True:
         try:
             result = verify_once(token, key)
