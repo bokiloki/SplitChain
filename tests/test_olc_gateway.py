@@ -6,6 +6,10 @@ from http.server import ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from splitchain.model import canonical_json
 from splitchain.olc_gateway import EXPECTED, Handler, Store
 
 
@@ -65,3 +69,29 @@ def test_bad_result_is_rejected(tmp_path):
     job = store.enqueue()
     store.lease("olc-worker-001")
     assert store.result("olc-worker-001", job["job_id"], "0" * 64)["state"] == "rejected"
+
+
+def test_separate_verifier_attestation(tmp_path):
+    key = Ed25519PrivateKey.generate()
+    public = key.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    store = Store(tmp_path / "state.json", {"workers": {"olc-worker-001": "w" * 40},
+                                           "operator": "o" * 40,
+                                           "verifier": {"token": "v" * 40, "public_key": public}})
+    job = store.enqueue()
+    store.lease("olc-worker-001")
+    store.result("olc-worker-001", job["job_id"], EXPECTED)
+    statement = store.verifier_job()
+    assert statement["job_id"] == job["job_id"]
+    statement["accepted"] = True
+    bad_signature = "00" * 64
+    try:
+        store.attest(statement, bad_signature)
+        assert False, "invalid signature accepted"
+    except ValueError:
+        pass
+    signature = key.sign(canonical_json(statement)).hex()
+    assert store.attest(statement, signature)["attestation"] == "ed25519-verifier-v1"
+    assert store.verifier_job() == {"job": None}
+    saved = Store(tmp_path / "state.json", store.credentials).operator_jobs()["jobs"][0]
+    assert saved["attestation"] == {"statement": statement, "signature": signature}
