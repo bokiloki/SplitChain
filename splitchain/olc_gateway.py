@@ -13,6 +13,11 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+from .model import canonical_json
+
 PAYLOAD = b"OLC Worker01 test job\n"
 EXPECTED = hashlib.sha256(PAYLOAD).hexdigest()
 NODE_ID = "olc-worker-001"
@@ -30,6 +35,15 @@ class Store:
                        for value in (*workers.values(), operator))
                 or len({*workers.values(), operator}) != len(workers) + 1):
             raise ValueError("gateway credentials must contain distinct 32+ character tokens")
+        verifier = credentials.get("verifier")
+        if verifier is not None:
+            if (not isinstance(verifier, dict) or not isinstance(verifier.get("token"), str)
+                    or len(verifier["token"]) < 32 or verifier["token"] in (*workers.values(), operator)
+                    or not isinstance(verifier.get("public_key"), str)):
+                raise ValueError("invalid verifier credentials")
+            self.verifier_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(verifier["public_key"]))
+        else:
+            self.verifier_key = None
         self.credentials = credentials
         self.lock = threading.RLock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -50,6 +64,7 @@ class Store:
 
     def authorized(self, token: str, role: str):
         reference = (self.credentials["operator"] if role == "operator" else
+                     self.credentials.get("verifier", {}).get("token", "") if role == "verifier" else
                      self.credentials["workers"].get(role, ""))
         return bool(reference) and hmac.compare_digest(token, reference)
 
@@ -114,6 +129,42 @@ class Store:
         with self.lock:
             return {"jobs": [{"job_id": key, **value} for key, value in self.data["jobs"].items()]}
 
+    def verifier_job(self):
+        with self.lock:
+            for job_id, job in self.data["jobs"].items():
+                if job["state"] == "verified" and "attestation" not in job:
+                    return {"job_id": job_id, "node_id": job["node_id"],
+                            "result_digest": job["result_digest"]}
+            return {"job": None}
+
+    def attest(self, statement: dict, signature: str):
+        if self.verifier_key is None:
+            raise ValueError("verifier not provisioned")
+        if set(statement) != {"job_id", "node_id", "result_digest", "accepted"}:
+            raise ValueError("invalid statement")
+        if type(statement["accepted"]) is not bool or not isinstance(signature, str):
+            raise ValueError("invalid attestation")
+        try:
+            self.verifier_key.verify(bytes.fromhex(signature), canonical_json(statement))
+        except (InvalidSignature, ValueError):
+            raise ValueError("invalid verifier signature") from None
+        with self.lock:
+            job = self.data["jobs"].get(statement["job_id"])
+            if (not job or job["state"] not in {"verified", "disputed"}
+                    or job["node_id"] != statement["node_id"]
+                    or job["result_digest"] != statement["result_digest"]):
+                raise ValueError("attestation does not match job")
+            if "attestation" in job:
+                if job["attestation"] != {"statement": statement, "signature": signature}:
+                    raise ValueError("conflicting attestation")
+            else:
+                job["attestation"] = {"statement": statement, "signature": signature}
+                if not statement["accepted"]:
+                    job["state"] = "disputed"
+                self._save()
+            return {"job_id": statement["job_id"], "state": job["state"],
+                    "attestation": "ed25519-verifier-v1"}
+
 
 class Handler(BaseHTTPRequestHandler):
     store: Store
@@ -159,11 +210,16 @@ class Handler(BaseHTTPRequestHandler):
             if self._authorize("operator"):
                 self._send(200, self.store.operator_jobs())
             return
+        if self.path == "/verifier/job":
+            if self._authorize("verifier"):
+                self._send(200, self.store.verifier_job())
+            return
         self._send(404, {"error": "unknown route"})
 
     def do_POST(self):
-        role = "operator" if self.path == "/operator/job" else NODE_ID
-        if self.path not in {"/operator/job", f"/worker/{NODE_ID}/heartbeat", f"/worker/{NODE_ID}/result"}:
+        role = ("operator" if self.path == "/operator/job" else
+                "verifier" if self.path == "/verifier/attest" else NODE_ID)
+        if self.path not in {"/operator/job", "/verifier/attest", f"/worker/{NODE_ID}/heartbeat", f"/worker/{NODE_ID}/result"}:
             return self._send(404, {"error": "unknown route"})
         if not self._authorize(role):
             return
@@ -173,6 +229,8 @@ class Handler(BaseHTTPRequestHandler):
                 if body != {"kind": "sha256-fixed-v1", "node_id": NODE_ID}:
                     raise ValueError("only the fixed test workload is supported")
                 result = self.store.enqueue()
+            elif self.path == "/verifier/attest":
+                result = self.store.attest(body.get("statement"), body.get("signature"))
             elif self.path.endswith("/heartbeat"):
                 result = self.store.heartbeat(NODE_ID, body.get("capabilities"))
             else:
