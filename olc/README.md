@@ -2,9 +2,11 @@
 
 This is the first step toward an OLC worker on a spare PC. The current
 repository has a pinned testnet bootstrap client and local DistOPS/TrueLies
-reference code. It does **not** yet have remote worker enrollment, job delivery,
-isolated execution, verifier networking, or explorer worker status. Running this
-check does not register a node or make it an observer in the consensus protocol.
+reference code. The optional fixed-job OLC pilot has an authenticated worker
+heartbeat, job delivery, isolated execution, and public worker status. It does
+**not** provide general workloads, TrueLies verifier networking, SplitChain
+settlement, or consensus membership. Running the preflight check alone does
+not enroll a node or make it an observer in the consensus protocol.
 
 ## On the spare machine
 
@@ -43,8 +45,10 @@ machine or accept remote jobs.
 
 ## Next implementation milestone
 
-After reviewing the inventory and successful bootstrap, add a separate
-unprivileged agent with node identity, authenticated enrollment, resource
-advertising and heartbeats. Then add a constrained workload executor and a
-remote TrueLies verification flow. Keep consensus participation disabled until
+After proving the fixed-job pilot, implement authenticated enrollment for
+additional workers, per-job signed manifests, independent TrueLies verifier
+nodes, and SplitChain settlement. Keep consensus participation disabled until
 those paths have been tested independently.
+
+The fixed-job outbound pilot is documented in
+[`docs/OLC_WORKER01_PILOT.md`](../docs/OLC_WORKER01_PILOT.md).
