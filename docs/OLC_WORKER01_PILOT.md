@@ -118,7 +118,9 @@ and token on the server; neither is copied to Worker01. The gateway and verifier
 containers communicate only on their private Docker network. The gateway
 container is recreated so its bind mount reads the updated credentials file.
 Within one poll interval each previously verified job receives an `attestation`
-object with the signed statement. A new job should likewise gain an attestation
+object with the signed statement. The public `/splitchain/explore/jobs` page
+and `/splitchain/receipts` JSON show the recent receipts, signatures, and
+verifier public key without exposing either token. A new job should likewise gain an attestation
 after Worker01 returns its result. This is an auditable first verifier, not a
 TrueLies 2/3 quorum; two independently hosted verifiers and quorum rules remain
 to be implemented before settlement.
