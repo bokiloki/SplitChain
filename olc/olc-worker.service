@@ -9,11 +9,7 @@ WorkingDirectory=%h/SplitChain
 ExecStart=%h/SplitChain/.venv/bin/python -m splitchain.olc_worker --genesis %h/SplitChain/configs/testnet-genesis.json --token-file %h/.config/olc/worker-token
 Restart=on-failure
 RestartSec=15
-PrivateTmp=yes
-ProtectSystem=full
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectControlGroups=yes
+Delegate=yes
 
 [Install]
 WantedBy=default.target
