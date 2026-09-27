@@ -95,3 +95,7 @@ def test_separate_verifier_attestation(tmp_path):
     assert store.verifier_job() == {"job": None}
     saved = Store(tmp_path / "state.json", store.credentials).operator_jobs()["jobs"][0]
     assert saved["attestation"] == {"statement": statement, "signature": signature}
+    public_receipts = store.public_receipts()
+    assert public_receipts["verifier_public_key"] == public
+    assert public_receipts["receipts"][0]["attestation"]["signature"] == signature
+    assert "token" not in json.dumps(public_receipts)
