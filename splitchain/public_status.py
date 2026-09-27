@@ -117,8 +117,8 @@ class Handler(BaseHTTPRequestHandler):
                 headers["Authorization"] = self.headers["Authorization"]
             request = Request(OLC_BACKEND + self.path, data=data, headers=headers, method=method)
             with urlopen(request, timeout=4) as response:
-                body = response.read(4097)
-                if len(body) > 4096:
+                body = response.read(16385)
+                if len(body) > 16384:
                     raise ValueError("worker response too large")
                 self._send(response.status, json.loads(body))
         except HTTPError as exc:
