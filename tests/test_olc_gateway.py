@@ -1,0 +1,64 @@
+"""Exercise authenticated OLC job lifecycle and persistence."""
+
+import json
+import threading
+from http.server import ThreadingHTTPServer
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
+from splitchain.olc_gateway import EXPECTED, Handler, Store
+
+
+def test_worker_lifecycle(tmp_path):
+    credentials = {"workers": {"olc-worker-001": "w" * 40}, "operator": "o" * 40}
+    Handler.store = Store(tmp_path / "state.json", credentials)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    def call(path, token=None, body=None):
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        request = Request(f"http://127.0.0.1:{server.server_port}{path}",
+                          headers=headers, data=json.dumps(body).encode() if body is not None else None)
+        with urlopen(request) as response:
+            return json.load(response)
+
+    try:
+        try:
+            call("/worker/olc-worker-001/job")
+            assert False, "unauthenticated job lease succeeded"
+        except HTTPError as error:
+            assert error.code == 401
+        assert call("/worker/olc-worker-001/heartbeat", "w" * 40,
+                    {"capabilities": {"cpu_threads": 16, "memory_mb": 31744}})["accepted"]
+        assert call("/workers")["workers"][0]["state"] == "online"
+        try:
+            call("/operator/job", "w" * 40,
+                 {"kind": "sha256-fixed-v1", "node_id": "olc-worker-001"})
+            assert False, "worker token submitted an operator job"
+        except HTTPError as error:
+            assert error.code == 401
+        job = call("/operator/job", "o" * 40,
+                   {"kind": "sha256-fixed-v1", "node_id": "olc-worker-001"})
+        leased = call("/worker/olc-worker-001/job", "w" * 40)
+        assert leased["job_id"] == job["job_id"]
+        receipt = call("/worker/olc-worker-001/result", "w" * 40,
+                       {"job_id": job["job_id"], "digest": EXPECTED})
+        assert receipt == {"job_id": job["job_id"], "state": "verified",
+                           "verification": "coordinator-sha256"}
+        assert call("/worker/olc-worker-001/job", "w" * 40) == {"job": None}
+        assert Store(tmp_path / "state.json", credentials).operator_jobs()["jobs"][0]["state"] == "verified"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_bad_result_is_rejected(tmp_path):
+    store = Store(tmp_path / "state.json", {"workers": {"olc-worker-001": "w" * 40},
+                                           "operator": "o" * 40})
+    job = store.enqueue()
+    store.lease("olc-worker-001")
+    assert store.result("olc-worker-001", job["job_id"], "0" * 64)["state"] == "rejected"
