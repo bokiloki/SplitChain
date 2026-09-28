@@ -138,6 +138,7 @@ services:
     entrypoint: ["python", "-m", "splitchain.olc_verifier"]
     command: []
     environment:
+      OLC_VERIFIER_ID: verifier-1
       OLC_VERIFIER_TOKEN_FILE: /run/olc/verifier-token
       OLC_VERIFIER_KEY_FILE: /run/olc/verifier-private.pem
     volumes:
