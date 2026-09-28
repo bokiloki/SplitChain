@@ -27,6 +27,21 @@ def test_two_of_three_timeout_votes_certify_secondary():
     assert state.term == 1
 
 
+def test_candidate_and_reused_voter_cannot_complete_failover_quorum():
+    authority = FailoverAuthority(KEYS)
+    state = LeadershipState(authority)
+    signed = vote(authority, "secondary")
+    assert state.submit(signed) is None
+    assert state.submit(signed) is None
+    assert state.term == 0
+    with pytest.raises(ProtocolError, match="unknown failover voter"):
+        vote(authority, "colleague-primary")
+    with pytest.raises(ProtocolError, match="invalid failover vote"):
+        state.submit(replace(signed, voter="colleague-primary"))
+    assert state.term == 0
+    assert state.submit(vote(authority, "tertiary")).voters == ("secondary", "tertiary")
+
+
 def test_heartbeat_prevents_premature_failover_and_clears_votes():
     authority = FailoverAuthority(KEYS)
     state = LeadershipState(authority)

@@ -14,6 +14,17 @@ import websockets
 from .auth import RequestAuthenticator
 
 BACKENDS = ("ws://primary:8765", "ws://secondary:8765", "ws://tertiary:8765")
+ROUND_INTERVAL_SECONDS = 10
+
+
+def next_round_delay(started_at: float, completed_at: float,
+                     interval: float = ROUND_INTERVAL_SECONDS) -> float:
+    """Keep a 10-second start cadence; skip missed slots rather than burst."""
+    if interval <= 0 or completed_at < started_at:
+        raise ValueError("invalid round clock timing")
+    target = started_at + interval
+    return max(0.0, (target if completed_at < target else completed_at + interval)
+               - completed_at)
 
 
 class RoundClock:
@@ -67,10 +78,11 @@ async def main() -> None:
     accounts = json.loads(secrets_file.read_text(encoding="utf-8"))
     clock = RoundClock(accounts["testnet_operator"], Path("/var/lib/splitchain/round-nonce"))
     while True:
+        started_at = time.monotonic()
         result = await clock.step()
         if "error" in result:
             print(f"round rejected: {result['error']['code']}", flush=True)
-        await asyncio.sleep(10)
+        await asyncio.sleep(next_round_delay(started_at, time.monotonic()))
 
 
 if __name__ == "__main__":
