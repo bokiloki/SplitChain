@@ -1,0 +1,18 @@
+[Unit]
+Description=OLC external verifier %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/SplitChain
+Environment=OLC_VERIFIER_ID=%i
+Environment=OLC_VERIFIER_BASE=https://bokiloki.ddns.net/splitchain/
+Environment=OLC_VERIFIER_TOKEN_FILE=%h/.config/olc/%i-token
+Environment=OLC_VERIFIER_KEY_FILE=%h/.config/olc/%i-private.pem
+ExecStart=%h/SplitChain/.venv/bin/python -m splitchain.olc_verifier
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=default.target
