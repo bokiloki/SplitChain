@@ -21,6 +21,7 @@ from .model import canonical_json
 PAYLOAD = b"OLC Worker01 test job\n"
 EXPECTED = hashlib.sha256(PAYLOAD).hexdigest()
 NODE_ID = "olc-worker-001"
+VERIFIER_IDS = ("verifier-1", "verifier-2", "verifier-3")
 LEASE_SECONDS = 120
 ONLINE_SECONDS = 45
 
@@ -44,6 +45,25 @@ class Store:
             self.verifier_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(verifier["public_key"]))
         else:
             self.verifier_key = None
+        configured = credentials.get("verifiers")
+        if configured is not None:
+            if not isinstance(configured, dict) or set(configured) != set(VERIFIER_IDS):
+                raise ValueError("the quorum roster requires three named verifiers")
+            all_tokens = [*workers.values(), operator]
+            keys = []
+            for verifier_id in VERIFIER_IDS:
+                item = configured[verifier_id]
+                if (not isinstance(item, dict) or not isinstance(item.get("token"), str)
+                        or len(item["token"]) < 32 or not isinstance(item.get("public_key"), str)):
+                    raise ValueError("invalid quorum verifier credentials")
+                Ed25519PublicKey.from_public_bytes(bytes.fromhex(item["public_key"]))
+                all_tokens.append(item["token"])
+                keys.append(item["public_key"])
+            if len(set(all_tokens)) != len(all_tokens) or len(set(keys)) != 3:
+                raise ValueError("quorum keys and tokens must be distinct")
+            self.verifier_keys = {name: configured[name]["public_key"] for name in VERIFIER_IDS}
+        else:
+            self.verifier_keys = {}
         self.credentials = credentials
         self.lock = threading.RLock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -64,8 +84,8 @@ class Store:
 
     def authorized(self, token: str, role: str):
         reference = (self.credentials["operator"] if role == "operator" else
-                     self.credentials.get("verifier", {}).get("token", "") if role == "verifier" else
-                     self.credentials["workers"].get(role, ""))
+                     self.credentials.get("verifiers", {}).get(role, {}).get("token", "")
+                     if role in VERIFIER_IDS else self.credentials["workers"].get(role, ""))
         return bool(reference) and hmac.compare_digest(token, reference)
 
     def heartbeat(self, node_id: str, capabilities: dict):
@@ -89,8 +109,12 @@ class Store:
 
     def enqueue(self):
         with self.lock:
+            if len(self.verifier_keys) != 3:
+                raise ValueError("three verifier keys must be provisioned before new jobs")
             job_id = secrets.token_hex(16)
-            self.data["jobs"][job_id] = {"node_id": NODE_ID, "state": "queued", "created": time.time()}
+            self.data["jobs"][job_id] = {"node_id": NODE_ID, "state": "queued", "created": time.time(),
+                                         "verifier_keys": self.verifier_keys.copy(),
+                                         "quorum_required": 2, "attestations": {}}
             self._save()
             return {"job_id": job_id, "state": "queued"}
 
@@ -113,12 +137,15 @@ class Store:
             raise ValueError("invalid digest")
         with self.lock:
             job = self.data["jobs"].get(job_id)
-            if not job or job["node_id"] != node_id or job["state"] not in {"leased", "verified", "rejected"}:
+            if not job or job["node_id"] != node_id or job["state"] not in {
+                    "leased", "verified", "awaiting_quorum", "quorum_verified", "disputed", "rejected"}:
                 raise ValueError("unknown or unleased job")
             if job["state"] == "leased":
                 if time.time() > job["lease_until"]:
                     raise ValueError("job lease expired")
-                job.update(state="verified" if hmac.compare_digest(digest, EXPECTED) else "rejected",
+                accepted = hmac.compare_digest(digest, EXPECTED)
+                job.update(state=("awaiting_quorum" if "verifier_keys" in job else "verified")
+                           if accepted else "rejected",
                            result_digest=digest, completed=time.time())
                 self._save()
             elif job["result_digest"] != digest:
@@ -136,45 +163,60 @@ class Store:
                 receipts.append({"job_id": job_id, "node_id": job["node_id"],
                                  "state": job["state"],
                                  "result_digest": job.get("result_digest"),
-                                 "attestation": job.get("attestation")})
+                                 "attestation": job.get("attestation"),
+                                 "attestations": job.get("attestations"),
+                                 "verifier_keys": job.get("verifier_keys"),
+                                 "quorum_required": job.get("quorum_required")})
             return {"schema": "olc-receipts/v1", "receipts": receipts,
-                    "verifier_public_key": self.credentials.get("verifier", {}).get("public_key")}
+                    "verifier_public_key": self.credentials.get("verifier", {}).get("public_key"),
+                    "verifiers": self.verifier_keys}
 
-    def verifier_job(self):
+    def verifier_job(self, verifier_id: str):
         with self.lock:
             for job_id, job in self.data["jobs"].items():
-                if job["state"] == "verified" and "attestation" not in job:
+                if (job["state"] == "awaiting_quorum"
+                        and verifier_id in job.get("verifier_keys", {})
+                        and verifier_id not in job["attestations"]
+                        and self.verifier_keys.get(verifier_id) == job["verifier_keys"][verifier_id]):
                     return {"job_id": job_id, "node_id": job["node_id"],
                             "result_digest": job["result_digest"]}
             return {"job": None}
 
-    def attest(self, statement: dict, signature: str):
-        if self.verifier_key is None:
-            raise ValueError("verifier not provisioned")
-        if set(statement) != {"job_id", "node_id", "result_digest", "accepted"}:
+    def attest(self, verifier_id: str, statement: dict, signature: str):
+        if not isinstance(statement, dict) or set(statement) != {
+                "job_id", "node_id", "result_digest", "accepted", "verifier_id"}:
             raise ValueError("invalid statement")
-        if type(statement["accepted"]) is not bool or not isinstance(signature, str):
+        if (statement["verifier_id"] != verifier_id or type(statement["accepted"]) is not bool
+                or not isinstance(signature, str)):
             raise ValueError("invalid attestation")
-        try:
-            self.verifier_key.verify(bytes.fromhex(signature), canonical_json(statement))
-        except (InvalidSignature, ValueError):
-            raise ValueError("invalid verifier signature") from None
         with self.lock:
             job = self.data["jobs"].get(statement["job_id"])
-            if (not job or job["state"] not in {"verified", "disputed"}
+            if (not job or job["state"] not in {"awaiting_quorum", "quorum_verified", "disputed"}
                     or job["node_id"] != statement["node_id"]
-                    or job["result_digest"] != statement["result_digest"]):
+                    or job["result_digest"] != statement["result_digest"]
+                    or self.verifier_keys.get(verifier_id) != job.get("verifier_keys", {}).get(verifier_id)):
                 raise ValueError("attestation does not match job")
-            if "attestation" in job:
-                if job["attestation"] != {"statement": statement, "signature": signature}:
+            try:
+                key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(job["verifier_keys"][verifier_id]))
+                key.verify(bytes.fromhex(signature), canonical_json(statement))
+            except (InvalidSignature, ValueError):
+                raise ValueError("invalid verifier signature") from None
+            if verifier_id in job["attestations"]:
+                if job["attestations"][verifier_id] != {"statement": statement, "signature": signature}:
                     raise ValueError("conflicting attestation")
             else:
-                job["attestation"] = {"statement": statement, "signature": signature}
-                if not statement["accepted"]:
+                if job["state"] != "awaiting_quorum":
+                    raise ValueError("quorum already reached")
+                job["attestations"][verifier_id] = {"statement": statement, "signature": signature}
+                votes = [item["statement"]["accepted"] for item in job["attestations"].values()]
+                if sum(votes) >= job["quorum_required"]:
+                    job["state"] = "quorum_verified"
+                elif len(votes) - sum(votes) >= job["quorum_required"]:
                     job["state"] = "disputed"
                 self._save()
             return {"job_id": statement["job_id"], "state": job["state"],
-                    "attestation": "ed25519-verifier-v1"}
+                    "approvals": sum(item["statement"]["accepted"] for item in job["attestations"].values()),
+                    "quorum_required": job["quorum_required"]}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -223,16 +265,17 @@ class Handler(BaseHTTPRequestHandler):
             if self._authorize("operator"):
                 self._send(200, self.store.operator_jobs())
             return
-        if self.path == "/verifier/job":
-            if self._authorize("verifier"):
-                self._send(200, self.store.verifier_job())
-            return
+        for verifier_id in VERIFIER_IDS:
+            if self.path == f"/verifier/{verifier_id}/job":
+                if self._authorize(verifier_id):
+                    self._send(200, self.store.verifier_job(verifier_id))
+                return
         self._send(404, {"error": "unknown route"})
 
     def do_POST(self):
-        role = ("operator" if self.path == "/operator/job" else
-                "verifier" if self.path == "/verifier/attest" else NODE_ID)
-        if self.path not in {"/operator/job", "/verifier/attest", f"/worker/{NODE_ID}/heartbeat", f"/worker/{NODE_ID}/result"}:
+        verifier_id = next((name for name in VERIFIER_IDS if self.path == f"/verifier/{name}/attest"), None)
+        role = "operator" if self.path == "/operator/job" else verifier_id or NODE_ID
+        if self.path not in {"/operator/job", f"/worker/{NODE_ID}/heartbeat", f"/worker/{NODE_ID}/result"} and verifier_id is None:
             return self._send(404, {"error": "unknown route"})
         if not self._authorize(role):
             return
@@ -242,8 +285,8 @@ class Handler(BaseHTTPRequestHandler):
                 if body != {"kind": "sha256-fixed-v1", "node_id": NODE_ID}:
                     raise ValueError("only the fixed test workload is supported")
                 result = self.store.enqueue()
-            elif self.path == "/verifier/attest":
-                result = self.store.attest(body.get("statement"), body.get("signature"))
+            elif verifier_id is not None:
+                result = self.store.attest(verifier_id, body.get("statement"), body.get("signature"))
             elif self.path.endswith("/heartbeat"):
                 result = self.store.heartbeat(NODE_ID, body.get("capabilities"))
             else:
