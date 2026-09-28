@@ -18,6 +18,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="https://bokiloki.ddns.net/splitchain/receipts")
     parser.add_argument("--public-key", help="expected verifier public key in hexadecimal")
+    parser.add_argument("--roster-sha256", help="expected SHA-256 of the canonical three-key roster")
     args = parser.parse_args()
     if not args.url.startswith("https://"):
         parser.error("HTTPS is required")
@@ -27,7 +28,7 @@ def main():
             raise ValueError("receipt document too large")
         document = json.loads(body)
     try:
-        verified, pending = verify_document(document, args.public_key)
+        verified, pending = verify_document(document, args.public_key, args.roster_sha256)
     except (InvalidSignature, ValueError, KeyError, TypeError) as exc:
         raise SystemExit(f"INVALID OLC receipt: {exc}") from exc
     print(f"Valid signed receipts: {verified}; pending signatures: {pending}")
