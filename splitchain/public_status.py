@@ -99,8 +99,10 @@ def fetch_nodes() -> dict:
 class Handler(BaseHTTPRequestHandler):
     def _olc_proxy(self, method: str) -> None:
         allowed_get = {"/workers", "/receipts", "/worker/olc-worker-001/job", "/operator/jobs"}
+        allowed_get.update(f"/verifier/verifier-{index}/job" for index in (1, 2, 3))
         allowed_post = {"/worker/olc-worker-001/heartbeat", "/worker/olc-worker-001/result",
                         "/operator/job"}
+        allowed_post.update(f"/verifier/verifier-{index}/attest" for index in (1, 2, 3))
         if self.path not in (allowed_get if method == "GET" else allowed_post):
             self._send(404, {"error": "unknown worker endpoint"})
             return
@@ -117,8 +119,8 @@ class Handler(BaseHTTPRequestHandler):
                 headers["Authorization"] = self.headers["Authorization"]
             request = Request(OLC_BACKEND + self.path, data=data, headers=headers, method=method)
             with urlopen(request, timeout=4) as response:
-                body = response.read(16385)
-                if len(body) > 16384:
+                body = response.read(65537)
+                if len(body) > 65536:
                     raise ValueError("worker response too large")
                 self._send(response.status, json.loads(body))
         except HTTPError as exc:
@@ -131,7 +133,8 @@ class Handler(BaseHTTPRequestHandler):
         self.connection.settimeout(5)
 
     def do_GET(self) -> None:
-        if self.path in {"/workers", "/receipts", "/worker/olc-worker-001/job", "/operator/jobs"}:
+        if self.path in {"/workers", "/receipts", "/worker/olc-worker-001/job", "/operator/jobs"} or self.path in {
+                f"/verifier/verifier-{index}/job" for index in (1, 2, 3)}:
             self._olc_proxy("GET")
             return
         if self.path == "/downloads":
@@ -264,7 +267,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         if self.path in {"/worker/olc-worker-001/heartbeat", "/worker/olc-worker-001/result",
-                         "/operator/job"}:
+                         "/operator/job"} or self.path in {
+                f"/verifier/verifier-{index}/attest" for index in (1, 2, 3)}:
             self._olc_proxy("POST")
             return
         if self.path in ("/enroll", "/enroll/check"):
