@@ -21,7 +21,7 @@
     status: {title:'Live ledger', description:'Current canonical ledger state reported by a running node. Reload to see a fresh snapshot.', endpoint:'status'},
     nodes: {title:'Network nodes', description:'Live responses from Primary, Secondary, and Tertiary. Matching heads show the same finalized ledger state.', endpoint:'nodes'},
     workers: {title:'OLC workers', description:'Registered test workers and their last reported capacities. These workers do not participate in ledger consensus.', endpoint:'workers'},
-    jobs: {title:'OLC job receipts', description:'Recent fixed test jobs, coordinator results, and signed verifier attestations. A single verifier is not a quorum.', endpoint:'receipts'},
+    jobs: {title:'OLC job receipts', description:'Recent fixed test jobs and signed verifier votes. New jobs require two of three distinct approvals for quorum.', endpoint:'receipts'},
     leadership: {title:'Node leadership', description:'Current leadership and replica state reported by a running node.', endpoint:'leadership'},
     bootstrap: {title:'Join the testnet', description:'Verify the pinned genesis and discover the public status and WebSocket RPC endpoints.', endpoint:'.well-known/splitchain-testnet.json'}
   };
@@ -79,10 +79,10 @@
       add('Workers',data.workers.length);add('Online',data.workers.filter(worker=>worker.state==='online').length);
       for (const worker of data.workers) section(worker.node_id + ' · ' + worker.state, worker.capabilities);
     } else if (page === 'jobs') {
-      add('Recent jobs',data.receipts.length);add('Signed attestations',data.receipts.filter(job=>job.attestation).length);
+      add('Recent jobs',data.receipts.length);add('Quorum verified',data.receipts.filter(job=>job.state==='quorum_verified').length);
       add('Verifier public key',data.verifier_public_key,true);
       for (const job of data.receipts) section(job.job_id + ' · ' + job.state,
-        {worker:job.node_id,digest:job.result_digest ?? '—',attestation:job.attestation ?? 'Pending'});
+        {worker:job.node_id,digest:job.result_digest ?? '—',votes:job.attestations ?? job.attestation ?? 'Pending',required:job.quorum_required ?? 'Legacy pilot'});
     } else if (page === 'leadership') {
       add('Responding node',data.source);const result=data.result||{};
       for (const [key,value] of Object.entries(result)) if (value===null||typeof value!=='object') add(key.replaceAll('_',' '),value,String(value).length>24);
