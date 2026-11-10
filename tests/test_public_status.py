@@ -1,3 +1,4 @@
+import asyncio
 import json
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -5,9 +6,12 @@ from threading import Event, Thread
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import websockets
+
 from splitchain import public_status
 from splitchain.bootstrap import manifest
 from splitchain.model import GenesisConfig
+from splitchain.node import ReferenceNode
 
 
 def test_public_endpoint_restricts_methods_and_paths(monkeypatch):
@@ -117,6 +121,8 @@ def test_node_status_marks_missing_or_different_heads(monkeypatch):
     matching = public_status.fetch_nodes()
     assert matching["online"] == 3
     assert matching["heads_agree"] is True
+    assert matching["rounds_agree"] is True
+    assert matching["round_spread"] == 0
     assert [node["name"] for node in matching["nodes"]] == [
         "primary", "secondary", "tertiary",
     ]
@@ -131,6 +137,28 @@ def test_node_status_marks_missing_or_different_heads(monkeypatch):
     assert public_status.fetch_nodes()["heads_agree"] is False
 
 
+def test_nodes_reports_round_lag_even_when_heads_match(monkeypatch):
+    def probe(backend):
+        return {"name": backend, "state": "online", "height": 103,
+                "digest": "same", "round": 69979 if "secondary" in backend else 72405}
+
+    monkeypatch.setattr(public_status, "fetch_node_status", probe)
+    result = public_status.fetch_nodes()
+    assert result["heads_agree"] is True
+    assert result["rounds_agree"] is False
+    assert result["round_spread"] == 2426
+
+
+def test_nodes_unavailable_is_not_round_agreement(monkeypatch):
+    monkeypatch.setattr(public_status, "fetch_node_status", lambda backend: {
+        "name": backend, "state": "unavailable", "height": None,
+        "digest": None, "round": None,
+    })
+    result = public_status.fetch_nodes()
+    assert result["rounds_agree"] is False
+    assert result["round_spread"] is None
+
+
 def test_nodes_probe_is_rate_limited_per_client(monkeypatch):
     public_status._nodes_limits.clear()
     for _ in range(public_status._NODES_LIMIT):
@@ -138,3 +166,23 @@ def test_nodes_probe_is_rate_limited_per_client(monkeypatch):
     assert not public_status.allow_nodes_request("192.0.2.1", now=100.0)
     assert public_status.allow_nodes_request("192.0.2.2", now=100.0)
     assert public_status.allow_nodes_request("192.0.2.1", now=161.0)
+
+
+def test_node_probe_handles_ledger_larger_than_websocket_limit():
+    async def scenario():
+        node = ReferenceNode()
+        node.ledger.balances.update({f"test-account-{i:05}": 1 for i in range(4000)})
+        full = await node.dispatch({"id": "full", "method": "status"})
+        assert len(json.dumps(full).encode()) > 64 * 1024
+
+        async with websockets.serve(node.handler, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            status = await asyncio.to_thread(
+                public_status.fetch_node_status, f"ws://127.0.0.1:{port}"
+            )
+        assert status == {
+            "name": "127.0.0.1", "state": "online", "round": full["result"]["round"],
+            **full["result"]["canonical_head"],
+        }
+
+    asyncio.run(scenario())
