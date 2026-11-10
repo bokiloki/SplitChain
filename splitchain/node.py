@@ -336,6 +336,12 @@ class ReferenceNode:
     def _committed_position(self) -> int:
         return max(self.replication_nonces.values(), default=0)
 
+    def _save_heartbeat(self) -> None:
+        if self.store and self.leadership:
+            if self.store._heartbeat_anchor is None:
+                self._save()
+            self.store.save_heartbeat(self.leadership.snapshot())
+
     def _ledger_digest(self) -> str:
         return hashlib.sha256(canonical_json(self.ledger.snapshot())).hexdigest()
 
@@ -350,7 +356,7 @@ class ReferenceNode:
             self.leadership.heartbeat(
                 envelope["leader"], envelope["term"], envelope["tick"], envelope["nonce"]
             )
-            self._save()
+            self._save_heartbeat()
             return {"node_id": self.node_id, "term": self.leadership.term}
 
     async def receive_timeout_vote(self, params: dict) -> dict:
@@ -409,12 +415,12 @@ class ReferenceNode:
         state = self.leadership
         if state.last_heartbeat_tick == 0:
             state.last_heartbeat_tick = tick
-            self._save()
+            self._save_heartbeat()
         if state.leader == self.node_id:
             async with self._lock:
                 if tick > state.last_heartbeat_tick:
                     state.heartbeat(self.node_id, state.term, tick, self._committed_position())
-                    self._save()
+                    self._save_heartbeat()
                 heartbeat = state.authority.sign_heartbeat(
                     self.node_id, state.term, tick, self._committed_position()
                 )
