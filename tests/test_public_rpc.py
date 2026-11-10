@@ -129,7 +129,9 @@ def test_gateway_to_three_replicas_finalizes_sandbox_units(monkeypatch, tmp_path
             async with websockets.serve(primary.handler, "127.0.0.1", 0) as p_server:
                 p_url = f"ws://127.0.0.1:{p_server.sockets[0].getsockname()[1]}"
                 monkeypatch.setattr(public_rpc, "BACKENDS", (p_url, s_url, t_url))
-                monkeypatch.setattr(round_clock, "BACKENDS", (p_url, s_url, t_url))
+                monkeypatch.setattr(round_clock, "BACKENDS", {
+                    "primary": p_url, "secondary": s_url, "tertiary": t_url,
+                })
                 gateway = public_rpc.Gateway()
                 async with websockets.serve(gateway.handler, "127.0.0.1", 0) as g_server:
                     g_url = f"ws://127.0.0.1:{g_server.sockets[0].getsockname()[1]}/rpc"

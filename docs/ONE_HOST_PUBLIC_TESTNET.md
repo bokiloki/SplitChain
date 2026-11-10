@@ -69,6 +69,16 @@ To exercise failover, stop Primary, observe the leadership view on Secondary,
 then restart Primary and compare ledger heads. Keep all state and logs if nodes
 disagree. With all nodes on one host, a host crash stops the whole cluster.
 
+For stalled rounds, compare two successive `/nodes` snapshots and check the
+`rounds` service logs. `heads_agree` compares the canonical ledger heads,
+while `rounds_agree` compares round numbers across all three nodes.
+`round_spread` measures the difference between the highest and lowest online
+round numbers. A round requires the certified leader and at least one replica.
+If the clock reports `COMMIT_UNCERTAIN`, check the nodes' rounds and committed
+positions to see whether the advance landed. If failover remains blocked by a
+prepared mutation, preserve the volumes and compare the survivors' signed
+replication histories before attempting recovery.
+
 ## Public HTTPS path on the existing Nginx host
 
 The public entry point is **https://bokiloki.ddns.net/splitchain/**. The

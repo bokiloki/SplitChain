@@ -76,7 +76,8 @@ def fetch_node_status(backend: str) -> dict:
             response = json.loads(socket.recv(timeout=1.5))
             result = response["result"]
             head = result["canonical_head"]
-            if not isinstance(head["height"], int) or not isinstance(head["digest"], str):
+            if (type(head["height"]) is not int or not isinstance(head["digest"], str)
+                    or type(result["round"]) is not int or result["round"] < 0):
                 raise TypeError("invalid ledger head")
             return {"name": name, "state": "online", "height": head["height"],
                     "digest": head["digest"], "round": result["round"]}
@@ -92,8 +93,12 @@ def fetch_nodes() -> dict:
         nodes = list(pool.map(fetch_node_status, BACKENDS))
     online = sum(node["state"] == "online" for node in nodes)
     heads = {(node["height"], node["digest"]) for node in nodes if node["state"] == "online"}
+    rounds = [node["round"] for node in nodes if node["state"] == "online"]
+    round_spread = max(rounds) - min(rounds) if rounds else None
     return {"nodes": nodes, "online": online, "total": len(nodes),
-            "heads_agree": online == len(nodes) and len(heads) == 1}
+            "heads_agree": online == len(nodes) and len(heads) == 1,
+            "rounds_agree": online == len(nodes) and round_spread == 0,
+            "round_spread": round_spread}
 
 
 class Handler(BaseHTTPRequestHandler):

@@ -443,3 +443,34 @@ def test_offline_replica_catches_up_from_durable_signed_history(tmp_path):
         assert tertiary.replication_nonces == {"primary": 1}
 
     asyncio.run(scenario())
+
+
+def test_disconnected_peer_does_not_prevent_round_quorum():
+    async def scenario():
+        secondary = ReferenceNode(node_id="secondary", role="secondary", cluster_secret=SECRET)
+
+        async def disconnect(socket):
+            await socket.recv()
+            await socket.close(code=1011)
+
+        async with (
+            websockets.serve(secondary.handler, "127.0.0.1", 0) as healthy,
+            websockets.serve(disconnect, "127.0.0.1", 0) as broken,
+        ):
+            primary = ReferenceNode(
+                node_id="primary", role="primary", cluster_secret=SECRET,
+                peer_urls={
+                    "secondary": f"ws://127.0.0.1:{healthy.sockets[0].getsockname()[1]}",
+                    "tertiary": f"ws://127.0.0.1:{broken.sockets[0].getsockname()[1]}",
+                },
+            )
+            assert "result" in await primary.dispatch({
+                "id": "round", "method": "advance", "params": {"rounds": 1},
+            })
+            assert primary.ledger.round == secondary.ledger.round == 1
+            await primary.failover_step()
+            status = await primary.cluster_status()
+            assert status["peers"]["secondary"]["status"] == "available"
+            assert status["peers"]["tertiary"] == {"status": "unavailable"}
+
+    asyncio.run(scenario())

@@ -117,6 +117,8 @@ def test_node_status_marks_missing_or_different_heads(monkeypatch):
     matching = public_status.fetch_nodes()
     assert matching["online"] == 3
     assert matching["heads_agree"] is True
+    assert matching["rounds_agree"] is True
+    assert matching["round_spread"] == 0
     assert [node["name"] for node in matching["nodes"]] == [
         "primary", "secondary", "tertiary",
     ]
@@ -129,6 +131,28 @@ def test_node_status_marks_missing_or_different_heads(monkeypatch):
 
     monkeypatch.setattr(public_status, "fetch_node_status", different)
     assert public_status.fetch_nodes()["heads_agree"] is False
+
+
+def test_nodes_reports_round_lag_even_when_heads_match(monkeypatch):
+    def probe(backend):
+        return {"name": backend, "state": "online", "height": 103,
+                "digest": "same", "round": 69979 if "secondary" in backend else 72405}
+
+    monkeypatch.setattr(public_status, "fetch_node_status", probe)
+    result = public_status.fetch_nodes()
+    assert result["heads_agree"] is True
+    assert result["rounds_agree"] is False
+    assert result["round_spread"] == 2426
+
+
+def test_nodes_unavailable_is_not_round_agreement(monkeypatch):
+    monkeypatch.setattr(public_status, "fetch_node_status", lambda backend: {
+        "name": backend, "state": "unavailable", "height": None,
+        "digest": None, "round": None,
+    })
+    result = public_status.fetch_nodes()
+    assert result["rounds_agree"] is False
+    assert result["round_spread"] is None
 
 
 def test_nodes_probe_is_rate_limited_per_client(monkeypatch):

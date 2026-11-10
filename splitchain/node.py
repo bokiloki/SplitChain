@@ -529,9 +529,9 @@ class ReferenceNode:
     async def replicate_mutation(self, mutation: dict[str, Any]) -> Any:
         if not self.replication:
             raise ProtocolError("cluster replication is not configured")
-        if self.leadership and self.leadership.leader != self.node_id:
-            raise ProtocolError("old Primary is fenced by a leadership certificate")
         async with self._lock:
+            if self.leadership and self.leadership.leader != self.node_id:
+                raise ProtocolError("old Primary is fenced by a leadership certificate")
             await self._abort_uncommitted_primary()
             trial = Ledger.from_snapshot(self.ledger.snapshot())
             original = self.ledger
@@ -586,9 +586,12 @@ class ReferenceNode:
                     ssl=self._peer_ssl if url.startswith("wss://") else None,
                 ) as socket:
                     await socket.send(json.dumps({"id": method, "method": method, "params": params}))
-                    return json.loads(await socket.recv())
-        except (OSError, TimeoutError, ValueError):
-            return None
+                    response = json.loads(await socket.recv())
+                    if isinstance(response, dict) and response.get("id") == method:
+                        return response
+        except (OSError, TimeoutError, ValueError, websockets.WebSocketException):
+            pass
+        return None
 
     async def _sync_history(self, url: str) -> bool:
         position = await self._replica_rpc(url, "replica.position", {})
@@ -685,9 +688,9 @@ class ReferenceNode:
         self._save()
 
     async def sync_replicas(self) -> dict[str, str]:
-        if not self.replication or not self.leadership or self.leadership.leader != self.node_id:
-            raise ProtocolError("only the certified leader can synchronize replicas")
         async with self._lock:
+            if not self.replication or not self.leadership or self.leadership.leader != self.node_id:
+                raise ProtocolError("only the certified leader can synchronize replicas")
             await self._abort_uncommitted_primary()
             results = await asyncio.gather(*(
                 self._sync_history(url) for _, url in sorted(self.peer_urls.items())
@@ -716,10 +719,10 @@ class ReferenceNode:
                             "params": {},
                         }))
                         response = json.loads(await socket.recv())
-                if "result" not in response:
-                    raise ProtocolError("peer returned an RPC error")
+                if not isinstance(response, dict) or not isinstance(response.get("result"), dict):
+                    raise ProtocolError("peer returned an invalid status response")
                 return node_id, {"status": "available", "ledger": response["result"]}
-            except (OSError, TimeoutError, ValueError, ProtocolError):
+            except (OSError, TimeoutError, ValueError, ProtocolError, websockets.WebSocketException):
                 return node_id, {"status": "unavailable"}
 
         results = await asyncio.gather(
