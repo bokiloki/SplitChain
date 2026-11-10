@@ -227,7 +227,16 @@ class ReferenceNode:
             async with self._lock:
                 self._verify_request_actor(request, method, params)
                 if method == "status":
-                    result = self.ledger.snapshot()
+                    if params.get("compact") is True:
+                        result = {
+                            "round": self.ledger.round,
+                            "canonical_head": {
+                                "height": self.ledger.canonical_height,
+                                "digest": self.ledger.canonical_digest,
+                            },
+                        }
+                    else:
+                        result = self.ledger.snapshot()
                 elif method == "ecosystem.demo":
                     result = self.ecosystem.demo()
                 elif method == "offer":

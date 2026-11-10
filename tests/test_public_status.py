@@ -1,3 +1,4 @@
+import asyncio
 import json
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -5,9 +6,12 @@ from threading import Event, Thread
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import websockets
+
 from splitchain import public_status
 from splitchain.bootstrap import manifest
 from splitchain.model import GenesisConfig
+from splitchain.node import ReferenceNode
 
 
 def test_public_endpoint_restricts_methods_and_paths(monkeypatch):
@@ -162,3 +166,23 @@ def test_nodes_probe_is_rate_limited_per_client(monkeypatch):
     assert not public_status.allow_nodes_request("192.0.2.1", now=100.0)
     assert public_status.allow_nodes_request("192.0.2.2", now=100.0)
     assert public_status.allow_nodes_request("192.0.2.1", now=161.0)
+
+
+def test_node_probe_handles_ledger_larger_than_websocket_limit():
+    async def scenario():
+        node = ReferenceNode()
+        node.ledger.balances.update({f"test-account-{i:05}": 1 for i in range(4000)})
+        full = await node.dispatch({"id": "full", "method": "status"})
+        assert len(json.dumps(full).encode()) > 64 * 1024
+
+        async with websockets.serve(node.handler, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            status = await asyncio.to_thread(
+                public_status.fetch_node_status, f"ws://127.0.0.1:{port}"
+            )
+        assert status == {
+            "name": "127.0.0.1", "state": "online", "round": full["result"]["round"],
+            **full["result"]["canonical_head"],
+        }
+
+    asyncio.run(scenario())

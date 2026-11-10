@@ -71,9 +71,11 @@ def fetch_node_status(backend: str) -> dict:
 
     name = backend.removeprefix("ws://").split(":")[0]
     try:
-        with connect(backend, open_timeout=1.5, close_timeout=1, max_size=64 * 1024) as socket:
-            socket.send(json.dumps({"id": "node-status", "method": "status", "params": {}}))
-            response = json.loads(socket.recv(timeout=1.5))
+        with connect(backend, open_timeout=5, close_timeout=1, max_size=64 * 1024) as socket:
+            socket.send(json.dumps({
+                "id": "node-status", "method": "status", "params": {"compact": True},
+            }))
+            response = json.loads(socket.recv(timeout=5))
             result = response["result"]
             head = result["canonical_head"]
             if (type(head["height"]) is not int or not isinstance(head["digest"], str)
